@@ -1,0 +1,255 @@
+---
+title: "Custom Expectations"
+description: "Define your own data quality rules by subclassing built-in Expectation types or writing SQL-based validation logic."
+keywords: ["great expectations", "custom expectation", "subclass", "ColumnMapExpectation", "BatchExpectation", "UnexpectedRowsExpectation", "SQL expectation"]
+---
+
+GX Core provides two complementary approaches for defining custom Expectations:
+
+1. **Subclassing a built-in Expectation** — inherit an existing Expectation class and override its default attribute values and description. This is the fastest way to encode domain-specific rules.
+2. **SQL-based Expectations** — use `UnexpectedRowsExpectation` to validate data using a raw SQL or Spark-SQL query. Any row returned by the query is treated as a validation failure.
+
+## When to use each approach
+
+| Approach | Best for |
+|----------|----------|
+| Subclass a built-in | Adding business context, more descriptive names, or domain-specific defaults to an existing check |
+| `UnexpectedRowsExpectation` | Complex multi-column logic, cross-table checks, or any validation best expressed in SQL |
+
+## Subclass a built-in Expectation
+
+Subclassing lets you bake domain knowledge directly into the Expectation class definition. Advantages over creating an instance with parameters:
+
+- All instances of the subclass automatically use the overridden defaults.
+- You can give the class a name that reflects your business logic.
+- The `description` attribute controls how the Expectation renders in Data Docs (Markdown is supported).
+
+### Example: subclass `ExpectColumnValuesToBeBetween`
+
+`ExpectColumnValuesToBeBetween` is a `ColumnMapExpectation`. It evaluates a yes/no condition for every row in a column, then checks whether the passing rate meets the `mostly` threshold.
+
+```python
+import great_expectations as gx
+
+class ExpectValidPassengerCount(gx.expectations.ExpectColumnValuesToBeBetween):
+    # Set the target column as a default
+    column: str = "passenger_count"
+    # Set the expected range as defaults
+    min_value: int = 1
+    max_value: int = 6
+    # This text appears in Data Docs; Markdown is supported
+    description: str = "There should be between **1** and **6** passengers."
+```
+
+Instantiate the custom class without passing any parameters. All defaults are pre-configured:
+
+```python
+expectation = ExpectValidPassengerCount()
+```
+
+<Tip>
+Avoid overriding the default values by passing parameters at instantiation time. Doing so would make the `description` inaccurate and would bypass the benefit of centralizing defaults in the class definition.
+</Tip>
+
+You can add the custom Expectation to an Expectation Suite and validate it just like any built-in Expectation:
+
+```python
+context = gx.get_context()
+
+suite = gx.ExpectationSuite(name="taxi_quality_suite")
+suite = context.suites.add(suite)
+suite.add_expectation(expectation)
+```
+
+### Base classes for subclassing
+
+GX Core provides three primary abstract base classes to subclass when building custom Expectations from scratch:
+
+<AccordionGroup>
+
+<Accordion title="BatchExpectation — whole-table checks">
+
+`BatchExpectation` evaluates a semantic question about an entire Batch of data. Use it when the check does not target a specific column (for example, row count, column count, or schema shape).
+
+```python
+from great_expectations.expectations.expectation import BatchExpectation
+
+class ExpectTableToHaveAtLeastOneRow(BatchExpectation):
+    metric_dependencies = ("table.row_count",)
+
+    def _validate(self, metrics, runtime_configuration=None, execution_engine=None):
+        row_count = metrics.get("table.row_count")
+        return {"success": row_count is not None and row_count >= 1}
+```
+
+`ExpectTableRowCountToBeBetween` and `ExpectColumnToExist` are built-in examples of `BatchExpectation` subclasses.
+
+</Accordion>
+
+<Accordion title="ColumnMapExpectation — row-level column checks">
+
+`ColumnMapExpectation` asks a yes/no question for every row in a column. It computes the fraction of passing rows and compares it to the `mostly` threshold.
+
+```python
+from great_expectations.expectations.expectation import ColumnMapExpectation
+
+class ExpectColumnValuesToBePositive(ColumnMapExpectation):
+    # map_metric points to the registered metric that evaluates
+    # the condition for each row
+    map_metric = "column_values.positive"
+    # Override defaults for your use case
+    column: str = "amount"
+    mostly: float = 0.99
+    description: str = "Column values must be **positive** at least 99% of the time."
+```
+
+`ExpectColumnValuesToNotBeNull`, `ExpectColumnValuesToBeBetween`, and `ExpectColumnValuesToBeInSet` are built-in `ColumnMapExpectation` subclasses.
+
+</Accordion>
+
+<Accordion title="ColumnAggregateExpectation — column-level statistics">
+
+`ColumnAggregateExpectation` computes a single aggregate metric for a column (mean, median, standard deviation, etc.) and validates it against bounds.
+
+```python
+from great_expectations.expectations.expectation import ColumnAggregateExpectation
+
+class ExpectFareAmountMeanToBeBetween(ColumnAggregateExpectation):
+    # Override defaults for the specific column and expected range
+    column: str = "fare_amount"
+    min_value: float = 5.0
+    max_value: float = 100.0
+    description: str = "Mean fare should be between **$5** and **$100**."
+```
+
+`ExpectColumnMeanToBeBetween` and `ExpectColumnMaxToBeBetween` are built-in `ColumnAggregateExpectation` subclasses.
+
+</Accordion>
+
+</AccordionGroup>
+
+## SQL-based custom Expectations
+
+`UnexpectedRowsExpectation` lets you define an Expectation using a SQL or Spark-SQL query. The Expectation succeeds when the query returns **zero rows**. Any row returned by the query is treated as a failing data point.
+
+This approach is well-suited for complex multi-column logic that is difficult to express with a built-in Expectation class.
+
+### Define the query
+
+Write a SQL query that selects rows that should **not** exist in valid data. Use the special `{batch}` token to reference the current Batch being validated — GX replaces it with the appropriate table or subquery at runtime.
+
+```python
+my_query = """
+    SELECT
+        *
+    FROM
+        {batch}
+    WHERE
+        passenger_count > 6 OR passenger_count < 0
+"""
+```
+
+### Instantiate the Expectation
+
+Create an instance of `UnexpectedRowsExpectation` with your query and an optional `description`:
+
+```python
+import great_expectations as gx
+
+my_query = """
+    SELECT
+        *
+    FROM
+        {batch}
+    WHERE
+        passenger_count > 6 OR passenger_count < 0
+"""
+
+expect_passenger_count_to_be_legal = gx.expectations.UnexpectedRowsExpectation(
+    unexpected_rows_query=my_query,
+    description="There should be no more than **6** passengers.",
+)
+```
+
+<Note>
+`UnexpectedRowsExpectation` requires a SQL-compatible Data Source (PostgreSQL, SQLite, Snowflake, BigQuery, Redshift, etc.). It does not support pandas DataFrames.
+</Note>
+
+### Create a named subclass
+
+For reusability across suites, subclass `UnexpectedRowsExpectation` and embed the query and description as class-level attributes:
+
+```python
+import great_expectations as gx
+
+class ExpectPassengerCountToBeLegal(gx.expectations.UnexpectedRowsExpectation):
+    unexpected_rows_query: str = """
+        SELECT
+            *
+        FROM
+            {batch}
+        WHERE
+            passenger_count > 6 OR passenger_count < 0
+    """
+    description: str = "There should be no more than **6** passengers."
+
+# Instantiate without arguments
+expectation = ExpectPassengerCountToBeLegal()
+```
+
+### Validate the Expectation
+
+Once created, use the Expectation with a SQL Batch exactly as you would any built-in Expectation:
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+# Set up a SQL Data Source
+data_source = context.data_sources.add_sqlite(
+    name="my_sql_data_source",
+    connection_string="sqlite:///data/yellow_tripdata.db",
+)
+data_asset = data_source.add_table_asset(
+    table_name="yellow_tripdata_sample_2019_01",
+    name="my_data_asset",
+)
+batch_definition = data_asset.add_batch_definition_whole_table("my_batch_definition")
+batch = batch_definition.get_batch()
+
+# Validate
+result = batch.validate(expectation)
+print(result)
+```
+
+<Tip>
+By default, Validation Results include up to 200 unexpected rows. To retrieve all failing rows from an `UnexpectedRowsExpectation`, use `ValidationDefinition.get_unexpected_rows()`.
+</Tip>
+
+## Add custom Expectations to a suite
+
+Custom Expectations — whether subclasses of built-ins or `UnexpectedRowsExpectation` — are added to suites the same way as built-in Expectations:
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+suite = gx.ExpectationSuite(name="taxi_custom_suite")
+suite = context.suites.add(suite)
+
+suite.add_expectation(ExpectValidPassengerCount())
+suite.add_expectation(ExpectPassengerCountToBeLegal())
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Expectations overview" icon="list" href="/expectations/overview">
+    Browse the full catalog of built-in Expectation types.
+  </Card>
+  <Card title="Expectation Suites" icon="layer-group" href="/expectations/expectation-suites">
+    Organize custom and built-in Expectations into Suites.
+  </Card>
+</CardGroup>

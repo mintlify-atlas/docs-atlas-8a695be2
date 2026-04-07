@@ -1,0 +1,95 @@
+---
+title: "Compatibility Reference"
+description: Supported Python versions, data sources, and integrations for GX Core
+---
+
+
+This page documents the officially supported Python versions, data source integrations, orchestrators, operating systems, and dependency policies for GX Core.
+
+## Python Versions
+
+GX Core supports Python **3.10, 3.11, 3.12, and 3.13**. GX follows the [Python release cycle](https://devguide.python.org/versions/) and typically drops support for end-of-life Python versions on the same schedule.
+
+| Python Version | Status |
+|----------------|--------|
+| 3.13 | Supported |
+| 3.12 | Supported |
+| 3.11 | Supported |
+| 3.10 | Supported |
+| 3.9 and below | Not supported |
+
+## GX Library Version
+
+GX Core **≥ 1.0** is the supported release line. Support for the 0.18 series was deprecated on October 25, 2024 and reached end of life on October 1, 2025.
+
+## Data Source Integrations
+
+The table below lists all supported data source integrations, the corresponding pip install command, and notes on requirements.
+
+| Data Source | Install Command | Notes |
+|-------------|----------------|-------|
+| Pandas (in-memory DataFrames & files) | `pip install great_expectations` | No extra required; supports CSV, Parquet, JSON, Excel, Feather, ORC, HDF5, and more |
+| Spark | `pip install 'great_expectations[spark]'` | Requires a configured Spark session; `pyspark` must be installed separately |
+| PostgreSQL | `pip install 'great_expectations[postgresql]'` | Uses `psycopg2` driver via SQLAlchemy |
+| Snowflake | `pip install 'great_expectations[snowflake]'` | Requires `snowflake-sqlalchemy`; supports connection string and individual credential parameters |
+| BigQuery | `pip install 'great_expectations[bigquery]'` | Requires GCP Application Default Credentials or a service account key |
+| Redshift | `pip install 'great_expectations[redshift]'` | Uses `redshift_connector` driver via SQLAlchemy; use `add_sql` datasource |
+| SQLite | `pip install great_expectations` | No extra required; bundled with Python's standard library |
+| Azure Blob Storage | `pip install 'great_expectations[azure]'` | Supports Pandas and Spark datasources reading from Azure Blob Storage |
+| Amazon S3 | `pip install 'great_expectations[s3]'` | Supports Pandas and Spark datasources reading from S3 via `boto3` |
+| Google Cloud Storage | `pip install 'great_expectations[bigquery]'` | Supports Pandas and Spark datasources reading from GCS via `gcsfs` |
+| Databricks SQL | `pip install 'great_expectations[databricks]'` | Validated against Databricks SQL warehouses and Unity Catalog |
+
+<Note>
+  GX has been observed to work with additional data sources including Athena, AWS Glue, Clickhouse, Databricks (Spark), Dremio, EMR Spark, MySQL, Teradata, and Vertica, but ongoing compatibility with these is not guaranteed and they are not officially supported.
+</Note>
+
+## Multiple Extras
+
+You can install multiple extras in a single command:
+
+```bash
+pip install 'great_expectations[spark,postgresql,snowflake]'
+```
+
+## Orchestrators
+
+| Orchestrator | Supported Version | Notes |
+|---|---|---|
+| Apache Airflow | 2.9.0+ | Officially supported. GX should work with any orchestrator that executes Python code, but only Airflow is tested. |
+
+## Operating Systems
+
+| OS | Status |
+|---|---|
+| macOS | Supported |
+| Linux | Supported |
+| Windows | Not officially supported. Users have reported success deploying on Windows, but GX does not test or guarantee compatibility. |
+
+## Credential Stores
+
+| Store | Notes |
+|---|---|
+| Environment variables | Supported for all secret values including connection strings and API keys |
+| `config_variables.yml` | Supported for local file-based projects |
+
+## Dependency Policy
+
+GX follows these policies for dependency support:
+
+- **Core dependencies** are supported for approximately 2 years after their initial release. View the [current core dependency list](https://github.com/great-expectations/great_expectations/blob/develop/requirements.txt) on GitHub.
+- **Optional dependencies** (install extras) are supported for approximately 1 year after their initial release. View the [current optional dependency list](https://github.com/great-expectations/great_expectations/tree/develop/reqs) on GitHub.
+- Exceptions are made to support dependency versions pinned in [Amazon MWAA constraint files](https://docs.aws.amazon.com/mwaa/latest/userguide/airflow-versions.html).
+
+<Warning>
+  If you install GX in an environment managed by a platform (e.g., Amazon MWAA, Databricks Runtime), check the platform's dependency constraints before upgrading GX or its extras. Dependency version conflicts can cause import errors or unexpected behavior.
+</Warning>
+
+## Web Browsers (GX Cloud)
+
+GX Cloud supports the latest versions of:
+
+- Google Chrome
+- Mozilla Firefox
+- Apple Safari
+- Microsoft Edge

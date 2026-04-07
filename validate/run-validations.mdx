@@ -1,0 +1,197 @@
+---
+title: "Run Validations"
+description: "Execute validations and interpret results, including result format options and accessing unexpected rows."
+keywords: ["run validation", "validation results", "result format", "unexpected rows", "great expectations"]
+---
+
+Running a Validation Definition executes your Expectation Suite against the Batch of data described by your Batch Definition. Results are returned as an `ExpectationSuiteValidationResult` object and are automatically saved to your Data Context.
+
+## Run a Validation Definition
+
+### Basic run
+
+Retrieve a Validation Definition and call its `run()` method:
+
+```python
+validation_definition = context.validation_definitions.get(
+    name="my_validation_definition"
+)
+
+results = validation_definition.run()
+```
+
+### Run with batch parameters
+
+If your Batch Definition is partitioned (for example, by year and month), pass a `batch_parameters` dictionary to select the specific Batch to validate:
+
+```python
+results = validation_definition.run(
+    batch_parameters={"year": "2023", "month": "01"}
+)
+```
+
+The keys accepted by `batch_parameters` are determined by the Batch Definition:
+
+| Batch Definition type | Required keys |
+|---|---|
+| Whole table | None |
+| Yearly partition | `year` |
+| Monthly partition | `year`, `month` |
+| Daily partition | `year`, `month`, `day` |
+
+### Run with runtime Expectation parameters
+
+If any Expectations in your suite are configured to accept runtime parameter values (using the `$PARAMETER` syntax), pass those values with `expectation_parameters`:
+
+```python
+results = validation_definition.run(
+    expectation_parameters={"max_revenue": 10_000_000}
+)
+```
+
+## Result formats
+
+Control the verbosity of returned results by passing a `result_format` argument. The default is `ResultFormat.SUMMARY`.
+
+```python
+from great_expectations.core.result_format import ResultFormat
+
+# Boolean only — fastest, no detail
+results = validation_definition.run(result_format=ResultFormat.BOOLEAN_ONLY)
+
+# Basic — success/failure plus a small sample of unexpected values
+results = validation_definition.run(result_format=ResultFormat.BASIC)
+
+# Summary — success/failure plus observed metrics (default)
+results = validation_definition.run(result_format=ResultFormat.SUMMARY)
+
+# Complete — full detail including up to 200 unexpected rows
+results = validation_definition.run(result_format=ResultFormat.COMPLETE)
+```
+
+<AccordionGroup>
+  <Accordion title="BOOLEAN_ONLY">
+    Returns only a `success` boolean for each Expectation. No observed values or metrics are included. Use this when you only need pass/fail status and want minimal overhead.
+  </Accordion>
+  <Accordion title="BASIC">
+    Returns `success`, `unexpected_count`, `unexpected_percent`, and a partial sample of unexpected values. Suitable for quick inspection.
+  </Accordion>
+  <Accordion title="SUMMARY">
+    Returns `success` plus a richer set of observed metrics that explain why each Expectation passed or failed. This is the default.
+  </Accordion>
+  <Accordion title="COMPLETE">
+    Returns all metrics plus up to 200 unexpected rows in `unexpected_list`. Use for detailed troubleshooting.
+  </Accordion>
+</AccordionGroup>
+
+## Accessing results
+
+The `run()` method returns an `ExpectationSuiteValidationResult` object.
+
+### Overall success
+
+```python
+print(results.success)  # True if all Expectations passed, False otherwise
+```
+
+### Iterating over individual results
+
+Each entry in `results.results` is an `ExpectationValidationResult`:
+
+```python
+for evr in results.results:
+    print(evr.expectation_config.type)  # e.g. "expect_column_values_to_not_be_null"
+    print(evr.success)                  # True or False
+    print(evr.result)                   # dict with observed metrics
+```
+
+### Accessing unexpected values
+
+When using `ResultFormat.COMPLETE`, unexpected values are available in each result's `result` dict:
+
+```python
+for evr in results.results:
+    if not evr.success:
+        unexpected_list = evr.result.get("unexpected_list", [])
+        print(f"{evr.expectation_config.type} failed with {len(unexpected_list)} unexpected values")
+```
+
+### Summary statistics
+
+```python
+print(results.statistics)
+# {
+#     "evaluated_expectations": 10,
+#     "successful_expectations": 8,
+#     "unsuccessful_expectations": 2,
+#     "success_percent": 80.0
+# }
+```
+
+## Retrieve all unexpected rows (no row cap)
+
+By default, `ResultFormat.COMPLETE` returns at most 200 unexpected rows. To retrieve every failing row with no limit, use `ValidationDefinition.get_unexpected_rows()`. This method only works with `UnexpectedRowsExpectation` (custom SQL Expectations).
+
+<Steps>
+  <Step title="Run the Validation Definition">
+    Execute the validation to get results. Pass `batch_parameters` if your Batch Definition is partitioned:
+
+    ```python
+    from great_expectations.core.result_format import ResultFormat
+
+    results = validation_definition.run(
+        batch_parameters={"year": "2024", "month": "03"},
+        result_format=ResultFormat.COMPLETE,
+    )
+    ```
+  </Step>
+
+  <Step title="Retrieve all unexpected rows for failing SQL Expectations">
+    Iterate over the results and call `get_unexpected_rows()` for each failing `UnexpectedRowsExpectation`:
+
+    ```python
+    from great_expectations.expectations.core.unexpected_rows_expectation import (
+        UnexpectedRowsExpectation,
+    )
+
+    for evr in results.results:
+        if not evr.success and isinstance(evr.expectation, UnexpectedRowsExpectation):
+            unexpected_rows = validation_definition.get_unexpected_rows(
+                expectation=evr.expectation,
+                batch_parameters=results.batch_parameters,
+            )
+            # unexpected_rows is a list[dict], one dict per failing row
+            print(f"Found {len(unexpected_rows)} unexpected rows")
+    ```
+
+    <Note>
+      `get_unexpected_rows()` only supports `UnexpectedRowsExpectation`. Check `isinstance(evr.expectation, UnexpectedRowsExpectation)` before calling it on other Expectation types.
+    </Note>
+  </Step>
+
+  <Step title="Process the failing rows">
+    The returned `list[dict]` contains one dictionary per failing row. You can convert it to a DataFrame, write it to a quarantine table, or process it however you need:
+
+    ```python
+    import pandas as pd
+
+    quarantine_df = pd.DataFrame(unexpected_rows)
+    quarantine_df.to_csv("quarantine_records.csv", index=False)
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  You can also call `get_unexpected_rows()` after running a Checkpoint rather than a standalone Validation Definition.
+</Tip>
+
+## What comes next
+
+<CardGroup cols={2}>
+  <Card title="Checkpoints" icon="list-checks" href="/validate/checkpoints">
+    Run multiple Validation Definitions together and trigger automated actions.
+  </Card>
+  <Card title="Actions" icon="bolt" href="/validate/actions">
+    Automatically send notifications and update reports after validation.
+  </Card>
+</CardGroup>

@@ -1,80 +1,193 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Install GX Core and run your first data validation in minutes using a Pandas DataFrame."
 ---
 
-## Get started in three steps
+This guide walks you through the complete GX Core workflow: install the library, connect to data, define Expectations, and validate a Batch — all in a single Python script.
 
-Get your documentation site running locally and make your first customization.
+<Note>
+  GX recommends running GX Core inside a Python virtual environment to avoid dependency conflicts. Create one with `python -m venv .venv && source .venv/bin/activate` before installing.
+</Note>
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Install GX Core">
+    Install the `great_expectations` package using `pip`:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    pip install great_expectations
+    ```
 
-### Step 2: Deploy your changes
+    Verify the installation by printing the version:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```python
+    import great_expectations as gx
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    print(gx.__version__)
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    If the installation succeeded, the version number is printed to the console.
+  </Step>
 
-### Step 3: Go live
+  <Step title="Create a Data Context">
+    A Data Context is the central object in every GX workflow. It manages your configuration, metadata, and validation results.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    ```
+
+    Calling `gx.get_context()` without arguments returns a file-based Data Context. GX creates a `gx/` directory in your working directory to store configuration and results. For in-memory use only, pass `mode="ephemeral"`.
+  </Step>
+
+  <Step title="Connect to data">
+    Connect GX to a Pandas DataFrame. This example reads the NYC taxi trip sample dataset from a CSV file.
+
+    ```python
+    import pandas as pd
+
+    df = pd.read_csv(
+        "https://raw.githubusercontent.com/great-expectations/gx_tutorials/main/data/yellow_tripdata_sample_2019-01.csv"
+    )
+
+    data_source = context.data_sources.add_pandas("pandas")
+    data_asset = data_source.add_dataframe_asset(name="taxi data asset")
+
+    batch_definition = data_asset.add_batch_definition_whole_dataframe("batch definition")
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    ```
+
+    - `data_source` — Represents the Pandas connection.
+    - `data_asset` — Represents the specific collection of records (here, the full DataFrame).
+    - `batch_definition` — Tells GX how to retrieve data from the asset.
+    - `batch` — The actual slice of data to validate.
+  </Step>
+
+  <Step title="Create an Expectation Suite">
+    An Expectation Suite is a named collection of Expectations. Add the suite to the Data Context so GX can manage and persist it.
+
+    ```python
+    suite = context.suites.add(
+        gx.ExpectationSuite(name="taxi data suite")
+    )
+    ```
+
+    Now add two Expectations to the suite. The sample data contains NYC taxi rides, so passenger count should be between 1 and 6, and fare amounts should be non-negative.
+
+    ```python
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="passenger_count", min_value=1, max_value=6
+        )
+    )
+    ```
+
+    `ExpectColumnValuesToNotBeNull` and `ExpectColumnValuesToBeBetween` are built-in Expectation classes from the `gx.expectations` namespace. Browse the full list at the [Expectations Gallery](https://greatexpectations.io/expectations/).
+  </Step>
+
+  <Step title="Create a Validation Definition">
+    A Validation Definition links a Batch Definition to an Expectation Suite — it explicitly says "validate this data against these Expectations".
+
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="taxi validation",
+            data=batch_definition,
+            suite=suite,
+        )
+    )
+    ```
+  </Step>
+
+  <Step title="Run the validation and review results">
+    Run the Validation Definition directly to get a Validation Result:
+
+    ```python
+    result = validation_definition.run(batch_parameters={"dataframe": df})
+    print(result)
+    ```
+
+    The output shows whether each Expectation passed or failed, along with counts and percentages of unexpected values:
+
+    ```json
+    {
+      "success": true,
+      "statistics": {
+        "evaluated_expectations": 2,
+        "successful_expectations": 2,
+        "unsuccessful_expectations": 0,
+        "success_percent": 100.0
+      }
+    }
+    ```
+
+    <Tip>
+      For production use, wrap your Validation Definitions in a `Checkpoint`. Checkpoints let you run multiple Validation Definitions together and trigger Actions — such as Slack alerts or Data Docs updates — based on the results.
+    </Tip>
+  </Step>
+</Steps>
+
+## Complete script
+
+Here is the full workflow from the steps above as a single script:
+
+```python
+import great_expectations as gx
+import pandas as pd
+
+# Create a Data Context
+context = gx.get_context()
+
+# Load sample data
+df = pd.read_csv(
+    "https://raw.githubusercontent.com/great-expectations/gx_tutorials/main/data/yellow_tripdata_sample_2019-01.csv"
+)
+
+# Connect to data
+data_source = context.data_sources.add_pandas("pandas")
+data_asset = data_source.add_dataframe_asset(name="taxi data asset")
+batch_definition = data_asset.add_batch_definition_whole_dataframe("batch definition")
+batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+
+# Define Expectations
+suite = context.suites.add(gx.ExpectationSuite(name="taxi data suite"))
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+)
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToBeBetween(
+        column="passenger_count", min_value=1, max_value=6
+    )
+)
+
+# Create and run a Validation Definition
+validation_definition = context.validation_definitions.add(
+    gx.ValidationDefinition(
+        name="taxi validation",
+        data=batch_definition,
+        suite=suite,
+    )
+)
+result = validation_definition.run(batch_parameters={"dataframe": df})
+print(result)
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core concepts" icon="book-open" href="/core-concepts">
+    Understand every GX component in depth.
+  </Card>
+  <Card title="Connect to data" icon="database" href="/connect/overview">
+    Connect GX to SQL databases, cloud storage, and more.
+  </Card>
+  <Card title="Define Expectations" icon="check-circle" href="/expectations/overview">
+    Explore the full Expectation library and write custom Expectations.
+  </Card>
+  <Card title="Checkpoints and Actions" icon="bolt" href="/validate/checkpoints">
+    Automate validation and integrate alerts into your pipeline.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

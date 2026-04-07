@@ -1,0 +1,352 @@
+---
+title: "Glossary"
+description: Definitions of key GX Core terms
+---
+
+
+This glossary defines the core concepts used throughout GX Core. Terms are grouped alphabetically.
+
+---
+
+## A
+
+<AccordionGroup>
+  <Accordion title="Action">
+    An **Action** is a component that executes automatically when a Checkpoint completes a validation run. Actions integrate GX with external systems based on the outcome of Validation Results. Common actions include:
+
+    - Sending a Slack or Microsoft Teams notification when validation fails
+    - Sending an email alert with a summary of results
+    - Triggering a custom webhook to update an incident management system (e.g., Jira)
+    - Updating Data Docs with the latest validation results
+
+    Actions are configured on Checkpoints and have access to the full Validation Result object, including whether each Expectation passed or failed.
+
+    ```python
+    import great_expectations as gx
+    from great_expectations.checkpoint.actions import SlackNotificationAction
+
+    checkpoint = context.checkpoints.add(
+        gx.Checkpoint(
+            name="nightly_check",
+            validation_definitions=[validation_definition],
+            actions=[
+                SlackNotificationAction(
+                    name="slack_alert",
+                    slack_webhook="https://hooks.slack.com/services/...",
+                    notify_on="failure",
+                )
+            ],
+        )
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## B
+
+<AccordionGroup>
+  <Accordion title="Batch">
+    A **Batch** is a representation of a subset of records from a Data Asset that can be validated against an Expectation Suite. A Batch is the fundamental unit of data that GX operates on during validation.
+
+    Batches are returned by calling `get_batch()` on a Batch Definition. They carry:
+    - The underlying data (a DataFrame, SQL result set, or file contents)
+    - Batch metadata (arbitrary key-value annotations)
+    - The batch identifiers that distinguish it from other batches of the same asset
+
+    ```python
+    batch = batch_definition.get_batch(batch_parameters={"year": 2024, "month": 3})
+    ```
+
+    Batches are used directly when running single Expectation tests or in data exploration. In production workflows, Validation Definitions and Checkpoints retrieve batches internally.
+  </Accordion>
+
+  <Accordion title="Batch Definition">
+    A **Batch Definition** is a configuration object that specifies how a Data Asset should be divided into individual Batches. It defines the partitioning strategy — for example, whether to return the whole asset as one batch, or to partition by day, month, or year using a date column or filename regex.
+
+    Batch Definitions are attached to Data Assets and persist as part of the GX project configuration. Each Batch Definition has a name and an optional partitioner.
+
+    ```python
+    # Whole table as a single batch
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full_orders")
+
+    # One batch per month, partitioned on a date column
+    batch_definition = table_asset.add_batch_definition_monthly(
+        name="monthly_orders",
+        column="created_at",
+    )
+    ```
+
+    A Batch Definition is referenced by Validation Definitions to associate data with an Expectation Suite.
+  </Accordion>
+
+  <Accordion title="Batch Parameters">
+    **Batch Parameters** are key-value pairs passed at runtime to a Batch Definition to identify and retrieve a specific Batch. The required keys depend on the Batch Definition's partitioning strategy.
+
+    Examples:
+    - Whole-table or whole-dataframe batch definitions require no batch parameters (or `{"dataframe": df}` for in-memory assets).
+    - Monthly SQL partitioning requires `{"year": int, "month": int}`.
+    - Daily file partitioning requires `{"year": int, "month": int, "day": int}`.
+
+    ```python
+    batch = batch_definition.get_batch(batch_parameters={"year": 2024, "month": 6})
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## C
+
+<AccordionGroup>
+  <Accordion title="Checkpoint">
+    A **Checkpoint** is a GX object that groups one or more Validation Definitions and runs them together with shared parameters and automated Actions. Checkpoints are the primary mechanism for validating data in a production deployment.
+
+    A Checkpoint run:
+    1. Iterates over its Validation Definitions
+    2. Retrieves the appropriate batch of data for each
+    3. Validates that data against the linked Expectation Suite
+    4. Executes all configured Actions based on the results
+
+    ```python
+    checkpoint = context.checkpoints.add(
+        gx.Checkpoint(
+            name="nightly_pipeline_check",
+            validation_definitions=[orders_validation, users_validation],
+        )
+    )
+    result = checkpoint.run()
+    ```
+
+    Checkpoints support passing `batch_parameters` and `expectation_parameters` at runtime to make a single Checkpoint reusable across different date ranges or configuration values.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## D
+
+<AccordionGroup>
+  <Accordion title="Data Asset">
+    A **Data Asset** is a named collection of records within a Data Source that is organized for validation. Data Assets represent a logical grouping of data — typically a table, a SQL query result, a file pattern, or an in-memory DataFrame.
+
+    Data Assets are further divided into Batches according to the Batch Definitions attached to them.
+
+    ```python
+    # Table-backed Data Asset
+    table_asset = datasource.add_table_asset(name="orders", table_name="orders")
+
+    # File-backed Data Asset (CSV files matching a regex)
+    file_asset = datasource.add_csv_asset(
+        name="daily_transactions",
+        batching_regex=r"transactions_(?P<year>\d{4})-(?P<month>\d{2})\.csv",
+    )
+
+    # In-memory DataFrame Asset
+    df_asset = datasource.add_dataframe_asset(name="staging_batch")
+    ```
+  </Accordion>
+
+  <Accordion title="Data Context">
+    A **Data Context** is the central object in GX that stores all project configuration and provides an interface for accessing and updating Data Sources, Expectation Suites, Validation Definitions, and Checkpoints.
+
+    There are three types of Data Context:
+    - **Ephemeral** (`gx.get_context()`): in-memory only, configuration is not persisted.
+    - **File-based** (`gx.get_context(project_root_dir="...")`): configuration is saved to the local filesystem.
+    - **Cloud** (`gx.get_context(cloud_access_token="...", cloud_organization_id="...")`): configuration is managed by GX Cloud.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()  # ephemeral
+    ```
+  </Accordion>
+
+  <Accordion title="Data Docs">
+    **Data Docs** are static websites generated by GX from project metadata. They provide a human-readable summary of:
+    - All Expectation Suites and their individual Expectations
+    - Historical Validation Results and their pass/fail status
+    - Data Asset and Data Source configuration
+
+    Data Docs are useful for sharing data quality status with stakeholders who do not use Python or the GX API directly. They can be hosted locally, on S3, Azure Blob Storage, or GCS.
+
+    ```python
+    context.build_data_docs()
+    context.open_data_docs()  # opens in the default web browser
+    ```
+  </Accordion>
+
+  <Accordion title="Data Source">
+    A **Data Source** is a GX object that tells GX how to connect to a specific external data system (a database, a filesystem, cloud object storage, or an in-memory engine). It provides an interface for organizing data into Data Assets.
+
+    Each Data Source corresponds to a specific technology:
+    - `add_pandas(name)` — Pandas DataFrames
+    - `add_pandas_filesystem(name, base_directory)` — local files
+    - `add_spark(name)` — Spark DataFrames
+    - `add_postgres(name, connection_string)` — PostgreSQL
+    - `add_snowflake(name, connection_string)` — Snowflake
+    - `add_sqlite(name, connection_string)` — SQLite
+
+    ```python
+    datasource = context.data_sources.add_postgres(
+        name="production_db",
+        connection_string="postgresql+psycopg2://user:pass@host/db",
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## E
+
+<AccordionGroup>
+  <Accordion title="Expectation">
+    An **Expectation** is a verifiable assertion about data. Each Expectation encodes a single, testable claim about a dataset — for example, "column `amount` values must be between 0 and 10,000" or "column `user_id` must not contain null values."
+
+    GX provides hundreds of built-in Expectations covering schema, volume, missingness, uniqueness, integrity, and distribution. Custom Expectations can also be defined.
+
+    ```python
+    from great_expectations.expectations import (
+        ExpectColumnValuesToNotBeNull,
+        ExpectColumnValuesToBeBetween,
+        ExpectTableRowCountToBeBetween,
+    )
+
+    expectation = ExpectColumnValuesToBeBetween(
+        column="amount",
+        min_value=0.0,
+        max_value=10000.0,
+    )
+    ```
+
+    Browse all available Expectations at the [GX Expectation Gallery](https://greatexpectations.io/expectations).
+  </Accordion>
+
+  <Accordion title="Expectation Suite">
+    An **Expectation Suite** is a named, ordered collection of Expectations that together describe how a dataset should look. Suites are the unit of validation — a Validation Definition links a Suite to a specific Batch Definition.
+
+    ```python
+    suite = context.suites.add(
+        gx.ExpectationSuite(name="orders_quality_suite")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="order_id")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="total", min_value=0.0, max_value=100000.0
+        )
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## R
+
+<AccordionGroup>
+  <Accordion title="Result Format">
+    **Result Format** controls how much detail is returned in a Validation Result for each Expectation. It is passed at validation time.
+
+    The available formats are:
+    - `BOOLEAN_ONLY` — only returns `True` (passed) or `False` (failed)
+    - `BASIC` — returns pass/fail plus summary counts (default)
+    - `SUMMARY` — returns pass/fail, counts, and partial value lists
+    - `COMPLETE` — returns all matched unexpected values
+
+    ```python
+    results = validation_definition.run(
+        result_format={"result_format": "COMPLETE", "unexpected_index_column_names": ["order_id"]}
+    )
+    ```
+
+    Use `BOOLEAN_ONLY` in high-throughput pipelines where minimal overhead is required. Use `COMPLETE` for debugging to identify specific failing rows.
+  </Accordion>
+
+  <Accordion title="Run Identifier">
+    A **Run Identifier** is a named reference for a specific execution of a Validation Definition or Checkpoint. It consists of a `run_name` (string) and a `run_time` (datetime). Run identifiers allow you to look up historical Validation Results and track validation history over time.
+
+    If a `run_name` is not explicitly provided, GX generates a timestamp-based name automatically.
+
+    ```python
+    from great_expectations.core import RunIdentifier
+
+    results = checkpoint.run(
+        run_name="nightly_2024-06-15",
+        run_time="2024-06-15T02:00:00+00:00",
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## S
+
+<AccordionGroup>
+  <Accordion title="Suite Parameters">
+    **Suite Parameters** (previously called "Evaluation Parameters" in earlier versions of GX) are dynamic values that can be substituted into Expectation arguments at validation time. They allow a single Expectation Suite to be used across different contexts by parameterizing values like thresholds, date ranges, or counts.
+
+    ```python
+    suite.add_expectation(
+        gx.expectations.ExpectTableRowCountToBeBetween(
+            min_value={"$PARAMETER": "expected_min_rows"},
+            max_value={"$PARAMETER": "expected_max_rows"},
+        )
+    )
+
+    # Supply actual values at run time
+    results = validation_definition.run(
+        expectation_parameters={
+            "expected_min_rows": 5000,
+            "expected_max_rows": 50000,
+        }
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## V
+
+<AccordionGroup>
+  <Accordion title="Validation Definition">
+    A **Validation Definition** is an object that links an Expectation Suite to a specific Batch Definition (source of data). It is the GX object that defines "validate this data against these rules."
+
+    Validation Definitions are used directly to run single-asset validations, or grouped inside a Checkpoint for multi-asset pipeline validation.
+
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="orders_validation",
+            data=batch_definition,   # what data to validate
+            suite=suite,             # what rules to apply
+        )
+    )
+    results = validation_definition.run()
+    ```
+  </Accordion>
+
+  <Accordion title="Validation Result">
+    A **Validation Result** is the object returned when data is validated against an Expectation or an Expectation Suite. It records:
+    - Whether the overall validation passed or failed
+    - The pass/fail status of each individual Expectation
+    - Statistics about the data checked (e.g., unexpected value counts)
+    - The run identifier and timestamp
+    - The batch identifiers of the data that was validated
+
+    ```python
+    results = validation_definition.run()
+    print(results.success)              # True or False
+    print(results["statistics"])        # overall stats
+    for r in results.results:           # per-expectation results
+        print(r["expectation_config"]["type"], r["success"])
+    ```
+
+    Validation Results are stored in the GX metadata store and rendered in Data Docs.
+  </Accordion>
+</AccordionGroup>

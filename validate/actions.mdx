@@ -1,0 +1,330 @@
+---
+title: "Actions"
+description: "Automatically trigger notifications and updates based on validation results using built-in or custom Actions."
+keywords: ["actions", "notifications", "slack", "email", "data docs", "checkpoint", "great expectations"]
+---
+
+Actions are steps that a Checkpoint executes after receiving Validation Results. They allow you to automate responses to data quality outcomes — sending alerts, updating reports, or running custom logic. All built-in Actions are available from the `great_expectations.checkpoint` module and all Action class names end in `Action`.
+
+The Actions list in a Checkpoint is executed once per Checkpoint run. `UpdateDataDocsAction` always runs before other actions, because notification actions may embed links to Data Docs pages.
+
+## The `notify_on` parameter
+
+Most notification actions accept a `notify_on` parameter that controls when the action fires:
+
+| Value | Behavior |
+|---|---|
+| `"all"` | Always fire, regardless of result. |
+| `"success"` | Fire only when all Expectations pass. |
+| `"failure"` | Fire when any Expectation fails, regardless of severity. |
+| `"critical"` | Fire only when there is a critical-severity failure. |
+| `"warning"` | Fire only when there is a warning-severity failure and no critical failures. |
+| `"info"` | Fire only when there is an info-severity failure and no warning or critical failures. |
+
+<Note>
+  Severity levels take precedence. If a result contains both warning and info failures, only actions set to `"warning"`, `"failure"`, or `"all"` will fire.
+</Note>
+
+## Built-in Actions
+
+### UpdateDataDocsAction
+
+Rebuilds Data Docs sites after each validation run so reports stay current. This action should be listed before any notification actions so that the updated site URLs are available for inclusion in messages.
+
+```python
+from great_expectations.checkpoint.actions import UpdateDataDocsAction
+
+update_docs = UpdateDataDocsAction(
+    name="update_data_docs",
+)
+```
+
+To rebuild only specific sites, provide a list of site names:
+
+```python
+update_docs = UpdateDataDocsAction(
+    name="update_data_docs",
+    site_names=["local_site"],
+)
+```
+
+### SlackNotificationAction
+
+Sends a message to a Slack channel via an incoming webhook or a Slack bot token.
+
+```python
+from great_expectations.checkpoint.actions import SlackNotificationAction
+
+# Using an incoming webhook
+slack_action = SlackNotificationAction(
+    name="notify_slack_on_failure",
+    slack_webhook="${SLACK_WEBHOOK_URL}",
+    notify_on="failure",
+    show_failed_expectations=True,
+)
+
+# Using a bot token and channel
+slack_action = SlackNotificationAction(
+    name="notify_slack_on_failure",
+    slack_token="${SLACK_BOT_TOKEN}",
+    slack_channel="#data-quality",
+    notify_on="failure",
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `slack_webhook` | `str \| None` | `None` | Incoming webhook URL. Use either this or `slack_token` + `slack_channel`. |
+| `slack_token` | `str \| None` | `None` | Slack bot token. |
+| `slack_channel` | `str \| None` | `None` | Channel to post to when using a bot token. |
+| `notify_on` | `str` | `"all"` | When to send the notification. |
+| `notify_with` | `list[str] \| None` | `None` | Data Docs site names whose URLs to include. Defaults to all sites. |
+| `show_failed_expectations` | `bool` | `False` | Include a list of failed Expectation types in the message. |
+
+### MicrosoftTeamsNotificationAction
+
+Sends a notification card to a Microsoft Teams channel via an incoming webhook.
+
+```python
+from great_expectations.checkpoint.actions import MicrosoftTeamsNotificationAction
+
+teams_action = MicrosoftTeamsNotificationAction(
+    name="notify_teams_on_failure",
+    teams_webhook="${TEAMS_WEBHOOK_URL}",
+    notify_on="failure",
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `teams_webhook` | `str` | required | Incoming Microsoft Teams webhook URL. |
+| `notify_on` | `str` | `"all"` | When to send the notification. |
+
+### EmailAction
+
+Sends an HTML email to one or more recipients via SMTP.
+
+```python
+from great_expectations.checkpoint.actions import EmailAction
+
+email_action = EmailAction(
+    name="notify_email_on_failure",
+    smtp_address="${SMTP_HOST}",
+    smtp_port="${SMTP_PORT}",
+    sender_login="${SENDER_EMAIL}",
+    sender_password="${SENDER_PASSWORD}",
+    receiver_emails="${RECEIVER_EMAILS}",  # comma-separated
+    use_ssl=True,
+    notify_on="failure",
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `smtp_address` | `str` | required | SMTP server hostname. |
+| `smtp_port` | `str` | required | SMTP server port. |
+| `receiver_emails` | `str` | required | Comma-separated list of recipient addresses. |
+| `sender_login` | `str \| None` | `None` | SMTP login username. |
+| `sender_password` | `str \| None` | `None` | SMTP login password. |
+| `sender_alias` | `str \| None` | `None` | Sender display name. Defaults to `sender_login`. |
+| `use_tls` | `bool \| None` | `None` | Use STARTTLS. |
+| `use_ssl` | `bool \| None` | `None` | Use SSL. |
+| `notify_on` | `str` | `"all"` | When to send the notification. |
+
+### SNSAction
+
+Publishes validation results to an AWS SNS topic as a JSON payload.
+
+```python
+from great_expectations.checkpoint.actions import SNSNotificationAction
+
+sns_action = SNSNotificationAction(
+    name="publish_to_sns",
+    sns_topic_arn="arn:aws:sns:us-east-1:123456789012:data-quality-alerts",
+    sns_message_subject="GX Validation Results",
+)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `sns_topic_arn` | `str` | The ARN of the SNS topic to publish to. |
+| `sns_message_subject` | `str \| None` | Subject line for the SNS message. Defaults to the Checkpoint name. |
+
+### OpsgenieAlertAction
+
+Creates an alert in Opsgenie when validation fails.
+
+```python
+from great_expectations.checkpoint.actions import OpsgenieAlertAction
+
+opsgenie_action = OpsgenieAlertAction(
+    name="opsgenie_on_failure",
+    api_key="${OPSGENIE_API_KEY}",
+    priority="P2",
+    notify_on="failure",
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `api_key` | `str` | required | Opsgenie API key. |
+| `region` | `str \| None` | `None` | Set to `"EU"` for the European API endpoint. |
+| `priority` | `str` | `"P3"` | Alert priority: `"P1"` through `"P5"`. |
+| `notify_on` | `str` | `"failure"` | When to create an alert. |
+| `tags` | `list[str] \| None` | `None` | Tags to attach to the alert. |
+
+### PagerdutyAlertAction
+
+Triggers a PagerDuty incident via Events API v2.
+
+```python
+from great_expectations.checkpoint.actions import PagerdutyAlertAction
+
+pagerduty_action = PagerdutyAlertAction(
+    name="pagerduty_on_failure",
+    api_key="${PAGERDUTY_API_KEY}",
+    routing_key="${PAGERDUTY_ROUTING_KEY}",
+    notify_on="failure",
+    severity="critical",
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `api_key` | `str` | required | PagerDuty Events API v2 key. |
+| `routing_key` | `str` | required | 32-character integration key for a service or global ruleset. |
+| `notify_on` | `str` | `"failure"` | When to create an incident. |
+| `severity` | `str` | `"critical"` | PagerDuty severity: `"critical"`, `"error"`, `"warning"`, or `"info"`. |
+
+## Adding Actions to a Checkpoint
+
+Pass a list of Action instances to the `actions` parameter when creating a Checkpoint:
+
+```python
+import great_expectations as gx
+from great_expectations.checkpoint.actions import (
+    UpdateDataDocsAction,
+    SlackNotificationAction,
+)
+
+checkpoint = gx.Checkpoint(
+    name="production_checkpoint",
+    validation_definitions=[validation_definition],
+    actions=[
+        UpdateDataDocsAction(name="update_data_docs"),
+        SlackNotificationAction(
+            name="slack_on_failure",
+            slack_webhook="${SLACK_WEBHOOK_URL}",
+            notify_on="failure",
+            show_failed_expectations=True,
+        ),
+    ],
+)
+
+context.checkpoints.add(checkpoint)
+```
+
+## Create a custom Action
+
+If the built-in Actions do not cover your needs, you can create a custom Action for any logic that can be expressed in Python — opening issue tracker tickets, calling internal APIs, running follow-up ETL jobs, and so on.
+
+<Steps>
+  <Step title="Subclass ValidationAction">
+    Import `ValidationAction` and create a new class that inherits from it:
+
+    ```python
+    from great_expectations.checkpoint.actions import ValidationAction
+
+    class MyCustomAction(ValidationAction):
+        pass
+    ```
+  </Step>
+
+  <Step title="Set a unique type identifier">
+    Override the `type` class attribute with a unique string. This is used to register and serialize the action:
+
+    ```python
+    from typing import Literal
+    from great_expectations.checkpoint.actions import ValidationAction
+
+    class MyCustomAction(ValidationAction):
+        type: Literal["my_custom_action"] = "my_custom_action"
+    ```
+  </Step>
+
+  <Step title="Add configuration fields">
+    Actions are built on Pydantic models. Declare additional fields as class-level attributes with type annotations. Pass their values when instantiating the action:
+
+    ```python
+    from typing import Literal
+    from great_expectations.checkpoint.actions import ValidationAction
+
+    class MyCustomAction(ValidationAction):
+        type: Literal["my_custom_action"] = "my_custom_action"
+        webhook_url: str
+        threshold: float = 0.95
+    ```
+  </Step>
+
+  <Step title="Override the run() method">
+    Implement the `run()` method with your custom logic. The method receives a `CheckpointResult` and must return a `dict`:
+
+    ```python
+    from typing import Literal
+    from great_expectations.checkpoint.actions import ActionContext, ValidationAction
+    from great_expectations.checkpoint.checkpoint import CheckpointResult
+
+    class MyCustomAction(ValidationAction):
+        type: Literal["my_custom_action"] = "my_custom_action"
+        webhook_url: str
+        threshold: float = 0.95
+
+        def run(
+            self,
+            checkpoint_result: CheckpointResult,
+            action_context: ActionContext | None = None,
+        ) -> dict:
+            success_rate = sum(
+                r.success for r in checkpoint_result.run_results.values()
+            ) / len(checkpoint_result.run_results)
+
+            if success_rate < self.threshold:
+                import requests
+                requests.post(self.webhook_url, json={"alert": True, "rate": success_rate})
+                return {"my_custom_action_result": "alert sent"}
+
+            return {"my_custom_action_result": "no alert needed"}
+    ```
+  </Step>
+
+  <Step title="Use the custom Action in a Checkpoint">
+    Instantiate and add your custom Action to a Checkpoint just like any built-in Action:
+
+    ```python
+    import great_expectations as gx
+
+    checkpoint = gx.Checkpoint(
+        name="my_checkpoint",
+        validation_definitions=[validation_definition],
+        actions=[
+            MyCustomAction(
+                name="my_custom_action",
+                webhook_url="https://internal.example.com/hooks/data-quality",
+                threshold=0.98,
+            ),
+        ],
+    )
+    ```
+  </Step>
+</Steps>
+
+## What comes next
+
+<CardGroup cols={2}>
+  <Card title="Checkpoints" icon="list-checks" href="/validate/checkpoints">
+    Configure and run Checkpoints with multiple Validation Definitions.
+  </Card>
+  <Card title="Data Docs" icon="file-text" href="/validate/data-docs">
+    View and configure human-readable validation reports.
+  </Card>
+</CardGroup>

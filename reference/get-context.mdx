@@ -1,0 +1,169 @@
+---
+title: "get_context()"
+description: "Factory function and primary entry point to GX Core. Returns the appropriate DataContext based on your environment and parameters."
+---
+
+`gx.get_context()` is the starting point for every GX workflow. Call it once to obtain a `DataContext`, then use that context to manage data sources, expectation suites, validation definitions, and checkpoints.
+
+## Function signature
+
+```python
+import great_expectations as gx
+
+context = gx.get_context(
+    mode=None,
+    project_config=None,
+    context_root_dir=None,
+    cloud_base_url=None,
+    cloud_access_token=None,
+    cloud_organization_id=None,
+)
+```
+
+## Parameters
+
+<ParamField path="mode" type="str | None" default="None">
+  Which type of DataContext to create. Accepts `"ephemeral"`, `"file"`, or `"cloud"`.
+
+  When `None`, GX infers the mode: Cloud if cloud credentials are available, File if a GX project exists on disk, otherwise Ephemeral.
+</ParamField>
+
+<ParamField path="project_config" type="DataContextConfig | Mapping | None" default="None">
+  An in-memory configuration object. Overrides configuration loaded from disk or Cloud. Useful for programmatic configuration without touching the filesystem.
+</ParamField>
+
+<ParamField path="context_root_dir" type="str | Path | None" default="None">
+  Path to the directory that contains `great_expectations.yml`. When provided, GX looks for configuration in that exact directory rather than searching parent directories.
+</ParamField>
+
+<ParamField path="cloud_base_url" type="str | None" default="None">
+  Base URL for the GX Cloud API. Overrides the `GX_CLOUD_BASE_URL` environment variable and `great_expectations.conf` file.
+</ParamField>
+
+<ParamField path="cloud_access_token" type="str | None" default="None">
+  Personal access token for GX Cloud authentication. Overrides the `GX_CLOUD_ACCESS_TOKEN` environment variable.
+</ParamField>
+
+<ParamField path="cloud_organization_id" type="str | None" default="None">
+  Organization ID for your GX Cloud account. Overrides the `GX_CLOUD_ORGANIZATION_ID` environment variable.
+</ParamField>
+
+## Return type
+
+Returns an `AbstractDataContext`. The concrete type depends on the mode selected:
+
+| Mode | Return type |
+|------|-------------|
+| `"ephemeral"` | `EphemeralDataContext` |
+| `"file"` | `FileDataContext` |
+| `"cloud"` | `CloudDataContext` |
+| `None` (auto-detect) | One of the above |
+
+## Modes
+
+<AccordionGroup>
+  <Accordion title="ephemeral — in-memory, no persistence">
+    An `EphemeralDataContext` stores everything in memory. No files are written to disk. Configuration is lost when the Python process ends.
+
+    Use ephemeral mode when:
+    - Running validations in a pipeline or notebook without needing persistent state
+    - Experimenting or testing GX without touching the filesystem
+    - You want to pass a full `project_config` programmatically
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="ephemeral")
+    ```
+
+    An ephemeral context can be promoted to a file-backed context:
+
+    ```python
+    file_context = context.convert_to_file_context()
+    ```
+  </Accordion>
+
+  <Accordion title="file — filesystem-backed project">
+    A `FileDataContext` reads and writes configuration to a `great_expectations/` directory on disk. This is the standard mode for local development and CI pipelines that have access to the filesystem.
+
+    When `mode="file"` and no `context_root_dir` is provided, GX looks for an existing project in the following order:
+    1. Path set in the `GX_HOME` environment variable
+    2. The current working directory
+    3. Parent directories of the current working directory
+
+    Use file mode when:
+    - You want to persist configuration, suites, and validation results between runs
+    - Working in a team and storing GX config in version control
+    - Running CI/CD pipelines with a checked-out repository
+
+    ```python
+    import great_expectations as gx
+
+    # Uses existing project in the current directory or parent directories
+    context = gx.get_context(mode="file")
+    ```
+
+    ```python
+    import great_expectations as gx
+
+    # Point to a specific project root
+    context = gx.get_context(
+        mode="file",
+        context_root_dir="/path/to/my_project/great_expectations",
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="cloud — GX Cloud-backed">
+    A `CloudDataContext` stores configuration in GX Cloud. All suites, validation definitions, checkpoints, and results are managed through the Cloud API.
+
+    Cloud credentials can be supplied in three ways (in order of precedence):
+    1. Parameters passed directly to `get_context()`
+    2. Environment variables: `GX_CLOUD_BASE_URL`, `GX_CLOUD_ACCESS_TOKEN`, `GX_CLOUD_ORGANIZATION_ID`
+    3. A `great_expectations.conf` file
+
+    Use cloud mode when:
+    - You want a shared, team-wide view of your GX configuration and results
+    - You need the GX Cloud UI for exploring data docs and validation history
+    - Running GX in a managed or serverless environment
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(
+        mode="cloud",
+        cloud_base_url="https://api.greatexpectations.io",
+        cloud_access_token="your-access-token",
+        cloud_organization_id="your-org-id",
+    )
+    ```
+
+    <Tip>
+      In production, prefer setting credentials via environment variables rather than passing them as arguments to avoid hardcoding secrets.
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+## Auto-detection (mode=None)
+
+When `mode` is not specified, GX determines the context type automatically:
+
+1. **Cloud**: If cloud credentials are available (via parameters, environment variables, or config file), a `CloudDataContext` is returned.
+2. **File**: If a GX project directory is found on disk, a `FileDataContext` is returned.
+3. **Ephemeral**: If neither condition is met, an `EphemeralDataContext` is returned.
+
+```python
+import great_expectations as gx
+
+# GX picks the right context for you
+context = gx.get_context()
+```
+
+<Note>
+  If you have cloud environment variables set and want to use a file context, pass `mode="file"` explicitly.
+</Note>
+
+## Raises
+
+- `GXCloudConfigurationError`: Raised when `mode="cloud"` but the required cloud credentials (`GX_CLOUD_ORGANIZATION_ID`, `GX_CLOUD_ACCESS_TOKEN`) are missing.
+- `ValueError`: Raised when an unrecognized `mode` value is passed.

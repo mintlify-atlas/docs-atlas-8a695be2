@@ -1,0 +1,158 @@
+---
+title: "ExpectationSuite"
+description: "A named, set-like collection of Expectations. Used to define the quality rules applied to a batch of data during validation."
+---
+
+An `ExpectationSuite` groups one or more `Expectation` objects under a shared name. During validation, a suite is paired with a data batch via a [`ValidationDefinition`](/reference/validation-definition), and each expectation in the suite is evaluated against that batch.
+
+## Constructor
+
+```python
+import great_expectations as gx
+
+suite = gx.ExpectationSuite(name="my_suite")
+```
+
+<ParamField path="name" type="str" required>
+  A unique, human-readable identifier for the suite. Must be a non-empty string. The name is used to retrieve the suite from the context store and to identify it in validation results.
+</ParamField>
+
+<ParamField path="expectations" type="list | None" default="[]">
+  An optional list of `Expectation` objects, `ExpectationConfiguration` dicts, or raw configuration dicts to include in the suite at construction time. Expectations can also be added individually after construction with `suite.add_expectation()`.
+</ParamField>
+
+<ParamField path="notes" type="str | list[str] | None" default="None">
+  Optional free-form notes about the suite. Accepts a single string or a list of strings. Notes are stored with the suite and displayed in Data Docs.
+</ParamField>
+
+<ParamField path="id" type="str | None" default="None">
+  An optional unique identifier. Assigned automatically when the suite is persisted via `context.suites.add()`. Do not set this manually unless restoring a known suite ID.
+</ParamField>
+
+## Attributes
+
+### suite.name
+
+The name of the suite as a string.
+
+```python
+print(suite.name)  # "my_suite"
+```
+
+### suite.expectations
+
+A list of `Expectation` objects in the suite. This list is mutable — you can inspect, iterate, or slice it directly, but use `add_expectation()` and `delete_expectation()` to add and remove expectations so that the changes are persisted correctly.
+
+```python
+for expectation in suite.expectations:
+    print(expectation.expectation_type)
+```
+
+## Methods
+
+### add_expectation()
+
+Adds an `Expectation` to the suite. If the suite has already been saved to the context store, the new expectation is immediately persisted.
+
+```python
+from great_expectations.expectations import ExpectColumnValuesToNotBeNull
+
+expectation = ExpectColumnValuesToNotBeNull(column="passenger_count")
+suite.add_expectation(expectation)
+```
+
+<Warning>
+  An expectation cannot be added if it already belongs to another suite (i.e., its `id` is already set). To copy an expectation from one suite to another, create a fresh copy and set `expectation.id = None`.
+</Warning>
+
+### delete_expectation()
+
+Removes an `Expectation` from the suite by reference. If the suite has been saved, the deletion is persisted immediately.
+
+```python
+expectation_to_remove = suite.expectations[0]
+suite.delete_expectation(expectation_to_remove)
+```
+
+Raises `KeyError` if the expectation is not found in the suite.
+
+### save()
+
+Persists the current state of the suite to the context store. Call this after making changes to the suite outside of `add_expectation()` or `delete_expectation()`.
+
+```python
+suite.notes = "Updated after schema change."
+suite.save()
+```
+
+## CRUD via context
+
+Use `context.suites` to persist and retrieve suites. The suite must be added to the context before it can be used in a `ValidationDefinition`.
+
+```python
+import great_expectations as gx
+from great_expectations.expectations import (
+    ExpectColumnValuesToNotBeNull,
+    ExpectColumnValuesToBeBetween,
+)
+
+context = gx.get_context(mode="file")
+
+# Build a suite with expectations
+suite = gx.ExpectationSuite(name="taxi_suite")
+suite = context.suites.add(suite)
+
+suite.add_expectation(ExpectColumnValuesToNotBeNull(column="passenger_count"))
+suite.add_expectation(
+    ExpectColumnValuesToBeBetween(column="fare_amount", min_value=0, max_value=1000)
+)
+```
+
+```python
+# Retrieve an existing suite
+suite = context.suites.get("taxi_suite")
+
+# List all suites in the context
+all_suites = list(context.suites.all())
+
+# Add a suite if it doesn't exist, or replace it if it does
+suite = context.suites.add_or_update(suite)
+
+# Delete a suite permanently
+context.suites.delete("taxi_suite")
+```
+
+## Full example
+
+```python
+import great_expectations as gx
+from great_expectations.expectations import (
+    ExpectColumnValuesToNotBeNull,
+    ExpectColumnValuesToBeBetween,
+    ExpectTableRowCountToBeBetween,
+)
+
+context = gx.get_context(mode="ephemeral")
+
+# Create and save a suite
+suite = gx.ExpectationSuite(
+    name="passenger_data_suite",
+    notes="Validates basic constraints on the taxi passenger dataset.",
+)
+suite = context.suites.add(suite)
+
+# Add expectations
+suite.add_expectation(ExpectColumnValuesToNotBeNull(column="passenger_count"))
+suite.add_expectation(
+    ExpectColumnValuesToBeBetween(
+        column="passenger_count",
+        min_value=1,
+        max_value=6,
+    )
+)
+suite.add_expectation(
+    ExpectTableRowCountToBeBetween(min_value=1, max_value=1_000_000)
+)
+
+print(f"Suite '{suite.name}' has {len(suite.expectations)} expectations.")
+```

@@ -1,0 +1,282 @@
+---
+title: "Connect to SQL Databases"
+description: "Connect to PostgreSQL, Snowflake, SQLite, Redshift, BigQuery, Databricks, Microsoft SQL Server, and other SQL databases."
+keywords: ["great expectations", "sql", "postgresql", "snowflake", "sqlite", "redshift", "bigquery", "database", "connection string"]
+---
+
+GX Core can connect to any SQL database supported by SQLAlchemy. It provides built-in methods for the most common dialects with optimized handling. For all others, the generic `add_sql()` method accepts any SQLAlchemy connection string.
+
+## Supported SQL dialects
+
+| Database | Method |
+|---|---|
+| PostgreSQL | `context.data_sources.add_postgres(name, connection_string)` |
+| Snowflake | `context.data_sources.add_snowflake(name, account, user, database, schema, warehouse, role, ...)` |
+| SQLite | `context.data_sources.add_sqlite(name, connection_string)` |
+| Redshift | `context.data_sources.add_redshift(name, connection_string)` |
+| Databricks SQL | `context.data_sources.add_databricks_sql(name, connection_string)` |
+| Microsoft SQL Server | `context.data_sources.add_sql_server(name, host, database, ...)` |
+| Microsoft Fabric | `context.data_sources.add_fabric(name, host, database, ...)` |
+| Other SQL (SQLAlchemy) | `context.data_sources.add_sql(name, connection_string)` |
+
+<Warning>
+  Install the appropriate GX Core extra for your database before connecting. For example: `pip install "great_expectations[postgresql]"` or `pip install "great_expectations[snowflake]"`.
+</Warning>
+
+## Prerequisites
+
+- Python 3.10 or later installed
+- GX Core installed with the relevant SQL extra (see table above)
+- Database credentials available (preferably as environment variables)
+- A Data Context: `context = gx.get_context()`
+
+## Storing credentials securely
+
+Never hard-code connection strings or passwords directly in your Python code. Store them as environment variables and reference them using GX Core's string substitution syntax (`${VAR_NAME}`).
+
+```bash
+export POSTGRESQL_CONNECTION_STRING="postgresql+psycopg2://user:password@host:5432/dbname"
+```
+
+```python
+# GX substitutes ${POSTGRESQL_CONNECTION_STRING} with the environment variable value at runtime
+my_connection_string = "${POSTGRESQL_CONNECTION_STRING}"
+```
+
+You can also use a `.env` file or a secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) and configure GX to read from it via the Data Context's config substitution provider.
+
+## Workflow
+
+<Steps>
+  <Step title="Create a Data Source">
+    Select the method that matches your database dialect. Pass the Data Source name and connection details. GX validates the connection when the Data Source is created.
+
+    <Tabs>
+      <Tab title="PostgreSQL">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context()
+
+        data_source = context.data_sources.add_postgres(
+            name="my_postgres_source",
+            connection_string="${POSTGRESQL_CONNECTION_STRING}"
+        )
+        ```
+
+        The connection string format for PostgreSQL is:
+
+        ```
+        postgresql+psycopg2://user:password@host:port/database
+        ```
+      </Tab>
+      <Tab title="Snowflake">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context()
+
+        # Option 1: connection string
+        data_source = context.data_sources.add_snowflake(
+            name="my_snowflake_source",
+            connection_string="${SNOWFLAKE_CONNECTION_STRING}"
+        )
+        ```
+
+        Or pass individual connection parameters:
+
+        ```python
+        data_source = context.data_sources.add_snowflake(
+            name="my_snowflake_source",
+            account="${SNOWFLAKE_ACCOUNT}",
+            user="${SNOWFLAKE_USER}",
+            database="${SNOWFLAKE_DATABASE}",
+            schema="${SNOWFLAKE_SCHEMA}",
+            warehouse="${SNOWFLAKE_WAREHOUSE}",
+            role="${SNOWFLAKE_ROLE}",
+            private_key="${SNOWFLAKE_PRIVATE_KEY}"
+        )
+        ```
+      </Tab>
+      <Tab title="SQLite">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context()
+
+        # For an on-disk SQLite file
+        data_source = context.data_sources.add_sqlite(
+            name="my_sqlite_source",
+            connection_string="sqlite:///path/to/my_database.db"
+        )
+
+        # For an in-memory SQLite database
+        data_source = context.data_sources.add_sqlite(
+            name="my_in_memory_sqlite",
+            connection_string="sqlite://"
+        )
+        ```
+      </Tab>
+      <Tab title="Redshift">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context()
+
+        data_source = context.data_sources.add_redshift(
+            name="my_redshift_source",
+            connection_string="${REDSHIFT_CONNECTION_STRING}"
+        )
+        ```
+
+        The connection string format for Redshift is:
+
+        ```
+        redshift+psycopg2://user:password@host:5439/database
+        ```
+      </Tab>
+    </Tabs>
+
+    <Tip>
+      Verify the connection after creation by printing the Data Source: `print(context.data_sources.get("my_postgres_source"))`. If the connection string is invalid, GX raises an error immediately.
+    </Tip>
+  </Step>
+
+  <Step title="Retrieve the Data Source (optional)">
+    If you created the Data Source in a previous session, retrieve it from the Data Context by name:
+
+    ```python
+    data_source = context.data_sources.get("my_postgres_source")
+    ```
+  </Step>
+
+  <Step title="Add a Data Asset">
+    A Data Asset defines which data within the database to expose for validation. GX Core supports two types of SQL Data Assets:
+
+    **Table Asset** — maps to a specific table or view:
+
+    ```python
+    table_asset = data_source.add_table_asset(
+        name="taxi_data",
+        table_name="postgres_taxi_data"
+    )
+    ```
+
+    **Query Asset** — uses a SQL query to define the data:
+
+    ```python
+    query_asset = data_source.add_query_asset(
+        name="recent_taxi_data",
+        query="SELECT * FROM postgres_taxi_data WHERE pickup_datetime >= '2020-01-01'"
+    )
+    ```
+
+    <Note>
+      The `table_name` parameter in `add_table_asset()` should match the actual table name in the database. If your database uses a non-default schema, include it in the table name (e.g., `"my_schema.my_table"`) or configure the schema at the Data Source level.
+    </Note>
+  </Step>
+
+  <Step title="Add a Batch Definition">
+    A Batch Definition specifies how records are selected from the Data Asset when GX retrieves data.
+
+    **Whole table** — returns all records in the table as a single Batch:
+
+    ```python
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full_table")
+    ```
+
+    **Partitioned by date column** — uses a datetime column to filter records by year, month, or day:
+
+    ```python
+    date_column = "pickup_datetime"
+
+    daily_batch_def = table_asset.add_batch_definition_daily(
+        name="daily_batches",
+        column=date_column
+    )
+
+    monthly_batch_def = table_asset.add_batch_definition_monthly(
+        name="monthly_batches",
+        column=date_column
+    )
+
+    yearly_batch_def = table_asset.add_batch_definition_yearly(
+        name="yearly_batches",
+        column=date_column
+    )
+    ```
+  </Step>
+
+  <Step title="Retrieve a Batch">
+    Call `get_batch()` on the Batch Definition. For whole-table definitions no parameters are needed. For partitioned definitions, provide the date parameters:
+
+    ```python
+    # Whole table
+    batch = batch_definition.get_batch()
+
+    # Daily partition
+    batch = daily_batch_def.get_batch(
+        batch_parameters={"year": 2020, "month": 1, "day": 14}
+    )
+
+    # Monthly partition
+    batch = monthly_batch_def.get_batch(
+        batch_parameters={"year": 2020, "month": 1}
+    )
+
+    # Yearly partition
+    batch = yearly_batch_def.get_batch(batch_parameters={"year": 2020})
+
+    print(batch.head())
+    ```
+  </Step>
+</Steps>
+
+## Complete example (PostgreSQL)
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+# 1. Create a Data Source
+data_source = context.data_sources.add_postgres(
+    name="my_postgres_source",
+    connection_string="${POSTGRESQL_CONNECTION_STRING}"
+)
+
+# 2. Add a Table Asset
+table_asset = data_source.add_table_asset(
+    name="taxi_data",
+    table_name="postgres_taxi_data"
+)
+
+# 3. Add Batch Definitions
+full_table_batch_def = table_asset.add_batch_definition_whole_table(name="full_table")
+monthly_batch_def = table_asset.add_batch_definition_monthly(
+    name="monthly_batches",
+    column="pickup_datetime"
+)
+
+# 4. Retrieve Batches
+full_batch = full_table_batch_def.get_batch()
+monthly_batch = monthly_batch_def.get_batch(batch_parameters={"year": 2020, "month": 1})
+
+print(full_batch.head())
+print(monthly_batch.head())
+```
+
+## BigQuery
+
+BigQuery uses Google Cloud credentials. Set up Application Default Credentials (ADC) before connecting:
+
+```bash
+gcloud auth application-default login
+```
+
+```python
+data_source = context.data_sources.add_bigquery(
+    name="my_bigquery_source",
+    connection_string="bigquery://my-gcp-project/my_dataset"
+)
+```

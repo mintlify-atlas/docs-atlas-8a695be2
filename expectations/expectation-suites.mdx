@@ -1,0 +1,185 @@
+---
+title: "Expectation Suites"
+description: "Create, populate, retrieve, and manage collections of Expectations that describe the ideal state of a dataset."
+keywords: ["great expectations", "expectation suite", "organize expectations", "data validation", "suite management"]
+---
+
+An Expectation Suite is a named, set-like collection of Expectations that describe the ideal state of a particular dataset. Rather than validating Expectations one at a time, organizing them into a Suite allows you to evaluate them together as a unit, producing a single structured `ExpectationSuiteValidationResult`.
+
+All production validation workflows in GX Core use Expectation Suites. A suite must be added to your Data Context before it can be persisted or used inside a Validation Definition.
+
+## Prerequisites
+
+- Python 3.10 or later installed.
+- GX Core installed (`pip install great_expectations`).
+- A configured Data Context (see [Create a Data Context](/setup/data-context)).
+
+## Create a suite
+
+Instantiate an `ExpectationSuite` by providing a unique name. The name must be a non-empty string and must be unique within your Data Context.
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+suite = gx.ExpectationSuite(name="taxi_data_quality")
+```
+
+## Add the suite to your Data Context
+
+Saving a suite to the Data Context persists it between Python sessions (when using a File or Cloud Data Context). The `add()` method returns the saved suite object, which you should use for all subsequent operations:
+
+```python
+suite = context.suites.add(suite)
+```
+
+<Tip>
+Always reassign the return value of `context.suites.add()`. The returned object is bound to the Data Context and supports persistence operations like `add_expectation()` and `save()`.
+</Tip>
+
+## Add Expectations to a suite
+
+Use `suite.add_expectation()` to add individual Expectations. The suite behaves like a set: adding a duplicate Expectation (same type and parameters) is a no-op.
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+suite = gx.ExpectationSuite(name="taxi_data_quality")
+suite = context.suites.add(suite)
+
+# Add a null check for passenger_count
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+)
+
+# Add a range check for fare_amount
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToBeBetween(
+        column="fare_amount",
+        min_value=0,
+        max_value=1000,
+    )
+)
+
+# Add a value set check for payment_type
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToBeInSet(
+        column="payment_type",
+        value_set=[1, 2, 3, 4, 5, 6],
+    )
+)
+
+# Add a table-level row count check
+suite.add_expectation(
+    gx.expectations.ExpectTableRowCountToBeBetween(
+        min_value=1_000,
+        max_value=5_000_000,
+    )
+)
+```
+
+<Note>
+`suite.add_expectation()` requires the suite to have been added to a Data Context first if you want the Expectation to be persisted immediately. If the suite has not yet been saved, Expectations are stored in memory only.
+</Note>
+
+## Update an Expectation in a suite
+
+If you hold a reference to an Expectation that is already in a suite, you can modify its attributes directly. Call `expectation.save()` to push the changes back to the suite's persisted configuration:
+
+```python
+# Hold a reference to the Expectation when adding it
+expectation = gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+suite.add_expectation(expectation)
+
+# Later, update the column and persist the change
+expectation.column = "pickup_location_id"
+expectation.save()
+```
+
+<Warning>
+`expectation.save()` only works if the Expectation's parent suite has already been added to a Data Context. Calling `save()` on an unsaved suite raises an error.
+</Warning>
+
+## List all suites
+
+Retrieve a list of all Expectation Suites stored in the current Data Context:
+
+```python
+all_suites = context.suites.all()
+
+for suite in all_suites:
+    print(suite.name)
+```
+
+## Retrieve a suite by name
+
+Load an existing suite from the Data Context by its name:
+
+```python
+suite = context.suites.get(name="taxi_data_quality")
+```
+
+Once retrieved, the suite object contains all of its persisted Expectations:
+
+```python
+for expectation in suite.expectations:
+    print(expectation.expectation_type, expectation.kwargs)
+```
+
+## Delete a suite
+
+Remove a suite from the Data Context permanently:
+
+```python
+context.suites.delete(name="taxi_data_quality")
+```
+
+<Warning>
+Deleting a suite is irreversible. Any Validation Definitions referencing the deleted suite will no longer be runnable.
+</Warning>
+
+## Full example
+
+The following script shows the complete lifecycle of creating a suite, populating it with Expectations, retrieving it, and reading its contents:
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+# 1. Create and save the suite
+suite = gx.ExpectationSuite(name="my_expectation_suite")
+suite = context.suites.add(suite)
+
+# 2. Add Expectations
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+)
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToNotBeNull(column="pickup_datetime")
+)
+suite.add_expectation(
+    gx.expectations.ExpectTableRowCountToBeBetween(min_value=1, max_value=1_000_000)
+)
+
+# 3. Retrieve the suite later in a different session
+existing_suite = context.suites.get(name="my_expectation_suite")
+
+# 4. Inspect the suite's Expectations
+for expectation in existing_suite.expectations:
+    print(expectation)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Create Expectations" icon="plus" href="/expectations/create-expectations">
+    Learn how to instantiate and configure individual Expectations.
+  </Card>
+  <Card title="Custom Expectations" icon="code" href="/expectations/custom-expectations">
+    Define reusable Expectation subclasses with built-in defaults.
+  </Card>
+</CardGroup>

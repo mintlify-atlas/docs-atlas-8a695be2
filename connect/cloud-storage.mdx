@@ -1,0 +1,301 @@
+---
+title: "Connect to Cloud Storage"
+description: "Connect to data files stored in AWS S3, Azure Blob Storage, or Google Cloud Storage and organize them into Batches for validation."
+keywords: ["great expectations", "cloud storage", "s3", "aws", "azure", "gcs", "google cloud", "blob storage"]
+---
+
+GX Core can read data files stored in AWS S3, Azure Blob Storage (ABS), and Google Cloud Storage (GCS). Each cloud provider has a dedicated pandas-backed Data Source. The same Data Asset and Batch Definition patterns used for local filesystem data apply equally to cloud storage.
+
+## Prerequisites
+
+- Python 3.10 or later installed
+- GX Core installed with the appropriate cloud extra:
+  - AWS S3: `pip install "great_expectations[s3]"`
+  - Azure Blob Storage: `pip install "great_expectations[azure]"`
+  - Google Cloud Storage: `pip install "great_expectations[bigquery]"`
+- Cloud credentials configured (see authentication notes below)
+- A Data Context: `context = gx.get_context()`
+
+## Workflow
+
+<Tabs>
+  <Tab title="AWS S3">
+    ### Authentication
+
+    GX Core uses [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html) to access S3. Configure credentials through any standard boto3 mechanism before running GX:
+
+    - AWS environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`)
+    - AWS credentials file (`~/.aws/credentials`)
+    - IAM role attached to your compute environment (EC2, ECS, Lambda)
+
+    You can also pass boto3 options directly via the `boto3_options` dictionary:
+
+    ```python
+    boto3_options = {
+        "region_name": "us-east-1",
+        # AWS credentials can also be passed here, but environment variables are preferred
+    }
+    ```
+
+    ### Create a Data Source
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    data_source = context.data_sources.add_pandas_s3(
+        name="my_s3_source",
+        bucket="my-data-bucket",
+        boto3_options={}  # Pass additional boto3 client options here
+    )
+    ```
+
+    ### Add a Data Asset
+
+    ```python
+    # Each matching object in the bucket can be returned as a separate Batch
+    data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+    ```
+
+    ### Add a Batch Definition
+
+    Partition files by the date in their S3 object key:
+
+    ```python
+    # Matches keys like: data/yellow_tripdata_2019-01.csv
+    batch_definition = data_asset.add_batch_definition_monthly(
+        name="monthly_taxi_data",
+        regex=r"data/yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+    )
+
+    batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+    print(batch.head())
+    ```
+
+    ### Complete example
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    data_source = context.data_sources.add_pandas_s3(
+        name="my_s3_source",
+        bucket="my-data-bucket",
+        boto3_options={}
+    )
+
+    data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+
+    batch_definition = data_asset.add_batch_definition_monthly(
+        name="monthly_taxi_data",
+        regex=r"data/yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+    )
+
+    batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+    print(batch.head())
+    ```
+  </Tab>
+
+  <Tab title="Azure Blob Storage">
+    ### Authentication
+
+    GX Core uses the [azure-storage-blob](https://pypi.org/project/azure-storage-blob/) library to access Azure Blob Storage. You must provide authentication details through the `azure_options` dictionary. Provide exactly one of the following:
+
+    - `account_url` + `credential`: authenticate with your storage account URL and an access token or SAS token
+    - `conn_str`: authenticate with a connection string
+
+    Store credentials as environment variables and reference them with GX Core's substitution syntax:
+
+    ```bash
+    export AZURE_STORAGE_ACCOUNT_URL="https://myaccount.blob.core.windows.net"
+    export AZURE_CREDENTIAL="my-sas-token-or-access-key"
+    ```
+
+    ### Create a Data Source
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    azure_options = {
+        "account_url": "${AZURE_STORAGE_ACCOUNT_URL}",
+        "credential": "${AZURE_CREDENTIAL}",
+    }
+
+    data_source = context.data_sources.add_pandas_abs(
+        name="my_abs_source",
+        azure_options=azure_options
+    )
+    ```
+
+    Alternatively, authenticate with a connection string:
+
+    ```python
+    azure_options = {
+        "conn_str": "${AZURE_STORAGE_CONNECTION_STRING}",
+    }
+
+    data_source = context.data_sources.add_pandas_abs(
+        name="my_abs_source",
+        azure_options=azure_options
+    )
+    ```
+
+    <Warning>
+      You must provide either `account_url` or `conn_str` in `azure_options`, but not both. GX raises an error if both are present or if neither is provided.
+    </Warning>
+
+    ### Add a Data Asset and Batch Definition
+
+    ```python
+    data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+
+    # Matches blobs like: container/yellow_tripdata_2019-01.csv
+    batch_definition = data_asset.add_batch_definition_monthly(
+        name="monthly_taxi_data",
+        regex=r"yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+    )
+
+    batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+    print(batch.head())
+    ```
+
+    ### Complete example
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    data_source = context.data_sources.add_pandas_abs(
+        name="my_abs_source",
+        azure_options={
+            "account_url": "${AZURE_STORAGE_ACCOUNT_URL}",
+            "credential": "${AZURE_CREDENTIAL}",
+        }
+    )
+
+    data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+
+    batch_definition = data_asset.add_batch_definition_monthly(
+        name="monthly_taxi_data",
+        regex=r"yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+    )
+
+    batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+    print(batch.head())
+    ```
+  </Tab>
+
+  <Tab title="Google Cloud Storage">
+    ### Authentication
+
+    GX Core uses the [google-cloud-storage](https://pypi.org/project/google-cloud-storage/) library. By default, credentials are read from the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, which should point to a service account key JSON file:
+
+    ```bash
+    export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+    ```
+
+    You can also use the gcloud CLI to set up Application Default Credentials:
+
+    ```bash
+    gcloud auth application-default login
+    ```
+
+    To pass credentials explicitly, use the `gcs_options` dictionary:
+
+    ```python
+    # Using a path to a credentials file
+    gcs_options = {"filename": "/path/to/service-account-key.json"}
+
+    # Or embedding the credentials JSON directly (as a string)
+    gcs_options = {"info": '{"type": "service_account", ...}'}
+    ```
+
+    ### Create a Data Source
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    data_source = context.data_sources.add_pandas_gcs(
+        name="my_gcs_source",
+        bucket_or_name="my-gcs-bucket",
+        gcs_options={}  # Leave empty to use GOOGLE_APPLICATION_CREDENTIALS
+    )
+    ```
+
+    ### Add a Data Asset and Batch Definition
+
+    ```python
+    data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+
+    # Matches objects like: data/yellow_tripdata_2019-01.csv
+    batch_definition = data_asset.add_batch_definition_monthly(
+        name="monthly_taxi_data",
+        regex=r"data/yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+    )
+
+    batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+    print(batch.head())
+    ```
+
+    ### Complete example
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    data_source = context.data_sources.add_pandas_gcs(
+        name="my_gcs_source",
+        bucket_or_name="my-gcs-bucket",
+        gcs_options={}
+    )
+
+    data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+
+    batch_definition = data_asset.add_batch_definition_monthly(
+        name="monthly_taxi_data",
+        regex=r"data/yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+    )
+
+    batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+    print(batch.head())
+    ```
+  </Tab>
+</Tabs>
+
+## Data Asset types for cloud storage
+
+The same Data Asset methods available for local filesystem data work with all three cloud providers. The most commonly used are:
+
+| Method | File format |
+|---|---|
+| `add_csv_asset(name)` | CSV |
+| `add_parquet_asset(name)` | Parquet |
+| `add_json_asset(name)` | JSON (line-delimited) |
+
+Keyword arguments accepted by the underlying `pandas.read_*` method can be passed as additional keyword arguments to `add_csv_asset()`, `add_parquet_asset()`, etc. For example, to specify a custom delimiter:
+
+```python
+data_asset = data_source.add_csv_asset(name="pipe_delimited_files", sep="|")
+```
+
+## Batch Definition partitioning for cloud storage
+
+The regex in a partitioned Batch Definition is matched against the full object path within the bucket (not the bucket name itself). Use named groups `year`, `month`, and `day` to match dates in object keys.
+
+| Granularity | Method | Required regex groups |
+|---|---|---|
+| Yearly | `add_batch_definition_yearly(name, regex)` | `year` |
+| Monthly | `add_batch_definition_monthly(name, regex)` | `year`, `month` |
+| Daily | `add_batch_definition_daily(name, regex)` | `year`, `month`, `day` |
+
+<Tip>
+  If you call `get_batch()` without `batch_parameters`, GX returns the most recent matching object by default.
+</Tip>

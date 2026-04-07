@@ -1,0 +1,427 @@
+---
+title: "SQL Integration"
+description: Full reference for connecting GX Core to SQL databases
+---
+
+
+Great Expectations integrates with SQL databases through SQLAlchemy. GX provides dedicated datasource types for PostgreSQL, Snowflake, BigQuery, SQLite, and a generic SQL fallback. Each datasource exposes `add_table_asset` and `add_query_asset` methods, and each asset supports `add_batch_definition_whole_table` for straightforward whole-table validation.
+
+## Data Source Types
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ### Installation
+
+    ```bash
+    pip install 'great_expectations[postgresql]'
+    ```
+
+    ### Connection
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    datasource = context.data_sources.add_postgres(
+        name="my_postgres",
+        connection_string="postgresql+psycopg2://user:password@localhost:5432/mydb",
+    )
+    ```
+
+    The `connection_string` must be a valid SQLAlchemy PostgreSQL URL. GX validates it against the `PostgresDsn` format.
+
+    ### Example with a table asset
+
+    ```python
+    datasource = context.data_sources.add_postgres(
+        name="transactions_db",
+        connection_string="postgresql+psycopg2://user:password@db-host:5432/transactions",
+    )
+
+    # Add a table asset
+    table_asset = datasource.add_table_asset(
+        name="orders",
+        table_name="orders",
+    )
+
+    # Validate the whole table as a single batch
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full_table")
+    batch = batch_definition.get_batch()
+    ```
+
+    ### Example with a query asset
+
+    ```python
+    query_asset = datasource.add_query_asset(
+        name="recent_orders",
+        query="SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL '7 days'",
+    )
+    batch_definition = query_asset.add_batch_definition_whole_table(name="last_7_days")
+    ```
+
+    ### Partitioned batch definitions
+
+    ```python
+    # Monthly partitioning on a date column
+    batch_definition = table_asset.add_batch_definition_monthly(
+        name="monthly",
+        column="created_at",
+    )
+    batch = batch_definition.get_batch(batch_parameters={"year": 2024, "month": 3})
+
+    # Daily partitioning on a date column
+    batch_definition = table_asset.add_batch_definition_daily(
+        name="daily",
+        column="created_at",
+    )
+    batch = batch_definition.get_batch(batch_parameters={"year": 2024, "month": 3, "day": 15})
+    ```
+  </Tab>
+
+  <Tab title="Snowflake">
+    ### Installation
+
+    ```bash
+    pip install 'great_expectations[snowflake]'
+    ```
+
+    ### Connection
+
+    Snowflake supports three authentication methods:
+
+    <AccordionGroup>
+      <Accordion title="Connection string (username + password)">
+        ```python
+        datasource = context.data_sources.add_snowflake(
+            name="my_snowflake",
+            connection_string="snowflake://user:password@myorg-myaccount/mydb/public?warehouse=compute_wh&role=sysadmin",
+        )
+        ```
+
+        The connection string must include `warehouse` and `role` as query parameters.
+      </Accordion>
+
+      <Accordion title="Individual connection parameters">
+        ```python
+        datasource = context.data_sources.add_snowflake(
+            name="my_snowflake",
+            account="myorg-myaccount",
+            user="myuser",
+            password="mypassword",
+            database="mydb",
+            schema="public",
+            warehouse="compute_wh",
+            role="sysadmin",
+        )
+        ```
+      </Accordion>
+
+      <Accordion title="Key-pair authentication">
+        ```python
+        datasource = context.data_sources.add_snowflake(
+            name="my_snowflake",
+            account="myorg-myaccount",
+            user="myuser",
+            private_key="<base64-encoded-private-key>",
+            database="mydb",
+            schema="public",
+            warehouse="compute_wh",
+            role="sysadmin",
+        )
+        ```
+      </Accordion>
+    </AccordionGroup>
+
+    The `account` identifier must be in one of these formats:
+    - `<orgname>-<account_name>` (e.g. `myOrg-my_account`)
+    - `<account_locator>.<region>.<cloud>` (e.g. `abc12345.us-east-1.aws`)
+
+    ### Example with a table asset
+
+    ```python
+    datasource = context.data_sources.add_snowflake(
+        name="snowflake_warehouse",
+        account="myorg-myaccount",
+        user="gx_user",
+        password="secret",
+        database="ANALYTICS",
+        schema="PUBLIC",
+        warehouse="COMPUTE_WH",
+        role="SYSADMIN",
+    )
+
+    table_asset = datasource.add_table_asset(
+        name="customer_events",
+        table_name="customer_events",
+    )
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full")
+    ```
+  </Tab>
+
+  <Tab title="BigQuery">
+    ### Installation
+
+    ```bash
+    pip install 'great_expectations[bigquery]'
+    ```
+
+    ### Connection
+
+    ```python
+    datasource = context.data_sources.add_bigquery(
+        name="my_bigquery",
+        connection_string="bigquery://my-gcp-project/my_dataset",
+    )
+    ```
+
+    The connection string format is `bigquery://<project>/<dataset>`.
+
+    ### Example with a table asset
+
+    ```python
+    datasource = context.data_sources.add_bigquery(
+        name="bq_analytics",
+        connection_string="bigquery://my-gcp-project/analytics",
+    )
+
+    table_asset = datasource.add_table_asset(
+        name="page_views",
+        table_name="page_views",
+    )
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full")
+    batch = batch_definition.get_batch()
+    ```
+
+    ### Example with a query asset
+
+    ```python
+    query_asset = datasource.add_query_asset(
+        name="weekly_active_users",
+        query="""
+            SELECT user_id, COUNT(*) as event_count
+            FROM page_views
+            WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
+            GROUP BY user_id
+        """,
+    )
+    batch_definition = query_asset.add_batch_definition_whole_table(name="wau")
+    ```
+
+    <Note>
+      GCP credentials must be available via Application Default Credentials (e.g., `gcloud auth application-default login`) or the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+    </Note>
+  </Tab>
+
+  <Tab title="Redshift">
+    ### Installation
+
+    ```bash
+    pip install 'great_expectations[redshift]'
+    ```
+
+    ### Connection
+
+    ```python
+    datasource = context.data_sources.add_sql(
+        name="my_redshift",
+        connection_string="redshift+redshift_connector://user:password@cluster.region.redshift.amazonaws.com:5439/mydb",
+    )
+    ```
+
+    <Note>
+      GX does not provide a dedicated `add_redshift` method. Use `add_sql` with a Redshift SQLAlchemy connection string. GX will detect the Redshift connector and handle query execution appropriately.
+    </Note>
+
+    ### Example with a table asset
+
+    ```python
+    datasource = context.data_sources.add_sql(
+        name="redshift_warehouse",
+        connection_string="redshift+redshift_connector://user:password@my-cluster.abc123.us-east-1.redshift.amazonaws.com:5439/dev",
+    )
+
+    table_asset = datasource.add_table_asset(
+        name="sales",
+        table_name="sales",
+    )
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full")
+    ```
+  </Tab>
+
+  <Tab title="SQLite">
+    ### Installation
+
+    SQLite support is included in the base `great_expectations` package. No extra install is needed.
+
+    ```bash
+    pip install great_expectations
+    ```
+
+    ### Connection
+
+    ```python
+    datasource = context.data_sources.add_sqlite(
+        name="my_sqlite",
+        connection_string="sqlite:///path/to/database.db",
+    )
+    ```
+
+    Supported URL schemes: `sqlite`, `sqlite+pysqlite`, `sqlite+aiosqlite`, `sqlite+pysqlcipher`. Use `sqlite:///:memory:` for an in-memory database.
+
+    ### Example with a table asset
+
+    ```python
+    datasource = context.data_sources.add_sqlite(
+        name="local_db",
+        connection_string="sqlite:///data/app.db",
+    )
+
+    table_asset = datasource.add_table_asset(
+        name="users",
+        table_name="users",
+    )
+    batch_definition = table_asset.add_batch_definition_whole_table(name="all_users")
+    batch = batch_definition.get_batch()
+    ```
+
+    ### Example with a query asset
+
+    ```python
+    query_asset = datasource.add_query_asset(
+        name="active_users",
+        query="SELECT * FROM users WHERE status = 'active'",
+    )
+    batch_definition = query_asset.add_batch_definition_whole_table(name="active")
+    ```
+
+    <Tip>
+      SQLite stores datetimes as strings. GX provides a `PartitionerConvertedDateTime` for SQLite to handle datetime-string partitioning with a configurable `date_format_string`.
+    </Tip>
+  </Tab>
+
+  <Tab title="Generic SQL">
+    Use `add_sql` for any SQLAlchemy-compatible database not covered by a dedicated datasource type (e.g., Redshift, MSSQL, Trino, Athena).
+
+    ### Example
+
+    ```python
+    datasource = context.data_sources.add_sql(
+        name="my_database",
+        connection_string="mssql+pyodbc://user:password@server/mydb?driver=ODBC+Driver+17+for+SQL+Server",
+    )
+
+    table_asset = datasource.add_table_asset(
+        name="transactions",
+        table_name="transactions",
+    )
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full")
+    ```
+
+    <Tip>
+      If a more specific datasource type exists for your database (e.g., `add_postgres`, `add_snowflake`), GX will emit a warning suggesting you use it. The dedicated types provide richer validation and better error messages.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Asset Reference
+
+### `add_table_asset`
+
+Registers a database table as a Data Asset.
+
+```python
+table_asset = datasource.add_table_asset(
+    name="my_asset",        # Logical name for the asset in GX
+    table_name="my_table",  # Actual table name in the database (defaults to name if omitted)
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Logical name for this asset in GX |
+| `table_name` | `str` | Name of the table in the database. Defaults to `name` if empty. |
+| `batch_metadata` | `dict` | Optional metadata dictionary to attach to every batch |
+
+### `add_query_asset`
+
+Registers a SQL `SELECT` query as a Data Asset. The query must begin with `SELECT`.
+
+```python
+query_asset = datasource.add_query_asset(
+    name="my_query_asset",
+    query="SELECT id, amount FROM orders WHERE status = 'complete'",
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Logical name for this asset in GX |
+| `query` | `str` | A `SELECT` SQL query. Must start with `SELECT` followed by whitespace. |
+| `batch_metadata` | `dict` | Optional metadata dictionary to attach to every batch |
+
+## Batch Definition Reference
+
+| Method | Parameters | Description |
+|--------|-----------|-------------|
+| `add_batch_definition_whole_table(name)` | `name: str` | Returns the entire asset as a single batch |
+| `add_batch_definition_yearly(name, column)` | `name: str`, `column: str` | One batch per year based on a date column |
+| `add_batch_definition_monthly(name, column)` | `name: str`, `column: str` | One batch per year+month based on a date column |
+| `add_batch_definition_daily(name, column)` | `name: str`, `column: str` | One batch per year+month+day based on a date column |
+
+## End-to-End Validation Workflow
+
+<Steps>
+  <Step title="Install and connect">
+    ```bash
+    pip install 'great_expectations[postgresql]'
+    ```
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    datasource = context.data_sources.add_postgres(
+        name="prod_db",
+        connection_string="postgresql+psycopg2://user:password@localhost:5432/prod",
+    )
+    ```
+  </Step>
+
+  <Step title="Add assets and batch definitions">
+    ```python
+    table_asset = datasource.add_table_asset(name="orders", table_name="orders")
+    batch_definition = table_asset.add_batch_definition_whole_table(name="full_orders")
+    batch = batch_definition.get_batch()
+    ```
+  </Step>
+
+  <Step title="Define Expectations">
+    ```python
+    suite = context.suites.add(gx.ExpectationSuite(name="orders_suite"))
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="order_id")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectTableRowCountToBeBetween(min_value=1, max_value=10_000_000)
+    )
+    ```
+  </Step>
+
+  <Step title="Run validation">
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="orders_validation",
+            data=batch_definition,
+            suite=suite,
+        )
+    )
+    results = validation_definition.run()
+    print(results)
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  GX creates temporary tables in the database during metric computation by default for some backends (controlled by the `create_temp_table` parameter). Set `create_temp_table=False` if your database user lacks `CREATE TEMP TABLE` privileges.
+</Warning>

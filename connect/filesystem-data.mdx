@@ -1,0 +1,199 @@
+---
+title: "Connect to Filesystem Data"
+description: "Connect to CSV, Parquet, JSON, and other files stored on a local or networked filesystem and organize them into Batches for validation."
+keywords: ["great expectations", "filesystem", "csv", "parquet", "json", "local files", "batch definition"]
+---
+
+Filesystem Data Sources connect GX Core to data stored as files in a folder hierarchy. GX uses pandas (or Spark) to read each file. Supported formats include CSV, Parquet, JSON, Excel, Feather, ORC, and any other format supported by `pandas.read_*` methods.
+
+## Prerequisites
+
+- Python 3.10 or later installed
+- GX Core installed: `pip install great_expectations`
+- Data files accessible at a known base directory path
+- A Data Context: `context = gx.get_context()`
+
+## Workflow
+
+<Steps>
+  <Step title="Create a Data Source">
+    A pandas filesystem Data Source requires a `name` and a `base_directory`. The `base_directory` is the root path under which GX will look for data files.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    data_source = context.data_sources.add_pandas_filesystem(
+        name="my_filesystem_source",
+        base_directory="./data"
+    )
+    ```
+
+    <Tip>
+      The `base_directory` path is relative to the `base_directory` of the Data Context when using a File Data Context, or to the current working directory when using an Ephemeral Data Context.
+    </Tip>
+
+    To use Spark instead of pandas, call `add_spark_filesystem()` with the same parameters:
+
+    ```python
+    data_source = context.data_sources.add_spark_filesystem(
+        name="my_spark_filesystem_source",
+        base_directory="./data"
+    )
+    ```
+  </Step>
+
+  <Step title="Add a Data Asset">
+    A Data Asset defines which set of files within the Data Source belongs together logically. GX Core provides two kinds of filesystem Data Assets:
+
+    - **File Asset**: each file is a separate potential Batch (you later define which file to use via a Batch Definition)
+    - **Directory Asset**: all files in a directory are treated as a single Batch
+
+    <Tabs>
+      <Tab title="CSV file asset">
+        ```python
+        # Each .csv file in the base_directory can be used as a separate Batch
+        data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+        ```
+      </Tab>
+      <Tab title="Parquet file asset">
+        ```python
+        # Each .parquet file in the base_directory can be used as a separate Batch
+        data_asset = data_source.add_parquet_asset(name="taxi_parquet_files")
+        ```
+      </Tab>
+      <Tab title="CSV directory asset">
+        ```python
+        # All .csv files in the specified subdirectory are read as one Batch
+        data_asset = data_source.add_directory_csv_asset(
+            name="taxi_csv_directory",
+            data_directory="./data/yellow_tripdata"
+        )
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      The `add_csv_asset()` and `add_parquet_asset()` methods also accept keyword arguments that are forwarded directly to `pandas.read_csv()` and `pandas.read_parquet()` respectively — for example, `sep`, `header`, `dtype`, or `storage_options`.
+    </Note>
+  </Step>
+
+  <Step title="Add a Batch Definition">
+    A Batch Definition controls which records are returned when GX retrieves data from the Data Asset. For filesystem data, there are several strategies:
+
+    **Whole directory** — returns all records from all files in a Directory Asset as a single Batch:
+
+    ```python
+    batch_definition = data_asset.add_batch_definition_whole_directory(
+        name="all_taxi_data"
+    )
+    ```
+
+    **Path** — returns a single named file from a File Asset:
+
+    ```python
+    batch_definition = data_asset.add_batch_definition_path(
+        name="january_2019",
+        path="yellow_tripdata_sample_2019-01.csv"
+    )
+    ```
+
+    **Partitioned by date** — uses a regex with named groups (`year`, `month`, `day`) to select files by date:
+
+    <Tabs>
+      <Tab title="Monthly">
+        ```python
+        # Matches files like: yellow_tripdata_sample_2019-01.csv
+        batch_definition = data_asset.add_batch_definition_monthly(
+            name="monthly_taxi_data",
+            regex=r"yellow_tripdata_sample_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+        )
+
+        # Retrieve January 2019
+        batch = batch_definition.get_batch(
+            batch_parameters={"year": "2019", "month": "01"}
+        )
+        ```
+      </Tab>
+      <Tab title="Daily">
+        ```python
+        # Matches files like: yellow_tripdata_sample_2019-01-15.csv
+        batch_definition = data_asset.add_batch_definition_daily(
+            name="daily_taxi_data",
+            regex=r"yellow_tripdata_sample_(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv"
+        )
+
+        # Retrieve January 15, 2019
+        batch = batch_definition.get_batch(
+            batch_parameters={"year": "2019", "month": "01", "day": "15"}
+        )
+        ```
+      </Tab>
+      <Tab title="Yearly">
+        ```python
+        # Matches files like: yellow_tripdata_sample_2019.csv
+        batch_definition = data_asset.add_batch_definition_yearly(
+            name="yearly_taxi_data",
+            regex=r"yellow_tripdata_sample_(?P<year>\d{4})\.csv"
+        )
+
+        # Retrieve 2019
+        batch = batch_definition.get_batch(batch_parameters={"year": "2019"})
+        ```
+      </Tab>
+    </Tabs>
+
+    <Tip>
+      If you call `get_batch()` on a partitioned Batch Definition without providing `batch_parameters`, GX returns the most recent matching Batch by default.
+    </Tip>
+  </Step>
+
+  <Step title="Retrieve a Batch and inspect it">
+    Call `get_batch()` on the Batch Definition to retrieve a Batch. Use `batch.head()` to verify that GX read the expected data.
+
+    ```python
+    batch = batch_definition.get_batch()
+    print(batch.head())
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+# 1. Create a filesystem Data Source
+data_source = context.data_sources.add_pandas_filesystem(
+    name="my_filesystem_source",
+    base_directory="./data"
+)
+
+# 2. Add a CSV file Data Asset
+data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+
+# 3. Add a monthly Batch Definition
+batch_definition = data_asset.add_batch_definition_monthly(
+    name="monthly_taxi_data",
+    regex=r"yellow_tripdata_sample_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+)
+
+# 4. Retrieve a specific Batch
+batch = batch_definition.get_batch(batch_parameters={"year": "2019", "month": "01"})
+print(batch.head())
+```
+
+## Regex naming conventions
+
+For partitioned Batch Definitions, the regex must use named capturing groups. GX Core recognizes the following group names:
+
+| Group name | Granularity | Method |
+|---|---|---|
+| `year` | Yearly | `add_batch_definition_yearly()` |
+| `year`, `month` | Monthly | `add_batch_definition_monthly()` |
+| `year`, `month`, `day` | Daily | `add_batch_definition_daily()` |
+
+The regex is matched against file paths relative to the Data Source `base_directory`.

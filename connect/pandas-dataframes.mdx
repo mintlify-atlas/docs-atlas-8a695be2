@@ -1,0 +1,167 @@
+---
+title: "Connect to Pandas DataFrames"
+description: "Connect to in-memory pandas or Spark DataFrames and organize them into Batches for validation."
+keywords: ["great expectations", "pandas", "dataframe", "spark", "in-memory", "batch parameters"]
+---
+
+A DataFrame Data Source connects GX Core to data that already lives in memory as a pandas or Spark DataFrame. Because the data is in-memory, no file path or connection string is needed — instead, you pass the DataFrame itself at runtime through batch parameters.
+
+## Prerequisites
+
+- Python 3.10 or later installed
+- GX Core installed: `pip install great_expectations`
+- Optional: PySpark installed for Spark DataFrames (`pip install pyspark`)
+- A Data Context: `context = gx.get_context()`
+
+## Workflow
+
+<Steps>
+  <Step title="Create a Data Source">
+    A DataFrame Data Source requires only a name. GX uses this name to identify the source within your Data Context.
+
+    <Tabs>
+      <Tab title="pandas">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context()
+
+        data_source = context.data_sources.add_pandas(name="my_pandas_source")
+        ```
+      </Tab>
+      <Tab title="Spark">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context()
+
+        data_source = context.data_sources.add_spark(name="my_spark_source")
+        ```
+      </Tab>
+    </Tabs>
+
+    <Tip>
+      Use a descriptive name that reflects what the source represents — for example, the pipeline stage or the system producing the data. Names must be unique within a Data Context.
+    </Tip>
+  </Step>
+
+  <Step title="Add a Data Asset">
+    A DataFrame Data Asset groups Validation Results under a logical name. You can add multiple Data Assets to a single Data Source — for example, one per pipeline stage.
+
+    ```python
+    data_asset = data_source.add_dataframe_asset(name="my_dataframe_asset")
+    ```
+
+    If you need to retrieve an existing Data Source from the context before adding the asset:
+
+    ```python
+    data_source = context.data_sources.get("my_pandas_source")
+    data_asset = data_source.add_dataframe_asset(name="my_dataframe_asset")
+    ```
+  </Step>
+
+  <Step title="Add a Batch Definition">
+    DataFrame Batch Definitions always use `add_batch_definition_whole_dataframe()`. The entire DataFrame is returned as a single Batch every time — there is no date-based partitioning for in-memory data.
+
+    ```python
+    batch_definition = data_asset.add_batch_definition_whole_dataframe(
+        "my_batch_definition"
+    )
+    ```
+
+    If you need to retrieve an existing Data Asset first:
+
+    ```python
+    batch_definition = (
+        context.data_sources.get("my_pandas_source")
+        .get_asset("my_dataframe_asset")
+        .get_batch_definition("my_batch_definition")
+    )
+    ```
+  </Step>
+
+  <Step title="Pass a DataFrame as a Batch Parameter">
+    Because DataFrames exist only for the duration of a Python session, they are not stored inside the Data Asset or Batch Definition. Instead, you provide the DataFrame at runtime using the `dataframe` key in a `batch_parameters` dictionary.
+
+    <Tabs>
+      <Tab title="pandas">
+        ```python
+        import pandas as pd
+
+        csv_path = "./data/yellow_tripdata_sample_2019-01.csv"
+        dataframe = pd.read_csv(csv_path)
+
+        batch_parameters = {"dataframe": dataframe}
+        ```
+      </Tab>
+      <Tab title="Spark">
+        ```python
+        from pyspark.sql import SparkSession
+
+        csv_path = "./data/yellow_tripdata_sample_2019-01.csv"
+        spark = SparkSession.builder.appName("Read CSV").getOrCreate()
+        dataframe = spark.read.csv(csv_path, header=True, inferSchema=True)
+
+        batch_parameters = {"dataframe": dataframe}
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Get a Batch and validate">
+    Pass the `batch_parameters` dictionary to `get_batch()` to retrieve a Batch containing your DataFrame data. You can then call `batch.validate()` to test individual Expectations interactively.
+
+    ```python
+    import great_expectations as gx
+
+    expectation = gx.expectations.ExpectColumnValuesToBeBetween(
+        column="passenger_count", min_value=1, max_value=6
+    )
+
+    batch = batch_definition.get_batch(batch_parameters=batch_parameters)
+    validation_result = batch.validate(expectation)
+    print(validation_result)
+    ```
+
+    <Note>
+      Results from `batch.validate()` are not persisted. This workflow is intended for interactive exploration and Expectation development. To persist results, use a Validation Definition with `validation_definition.run(batch_parameters=batch_parameters)`.
+    </Note>
+  </Step>
+</Steps>
+
+## Complete example
+
+```python
+import great_expectations as gx
+import pandas as pd
+
+# 1. Get a Data Context
+context = gx.get_context()
+
+# 2. Create a pandas Data Source
+data_source = context.data_sources.add_pandas(name="my_pandas_source")
+
+# 3. Add a Data Asset
+data_asset = data_source.add_dataframe_asset(name="my_dataframe_asset")
+
+# 4. Add a Batch Definition
+batch_definition = data_asset.add_batch_definition_whole_dataframe(
+    "my_batch_definition"
+)
+
+# 5. Load a DataFrame at runtime
+csv_path = "./data/yellow_tripdata_sample_2019-01.csv"
+dataframe = pd.read_csv(csv_path)
+batch_parameters = {"dataframe": dataframe}
+
+# 6. Get a Batch and validate
+expectation = gx.expectations.ExpectColumnValuesToBeBetween(
+    column="passenger_count", min_value=1, max_value=6
+)
+batch = batch_definition.get_batch(batch_parameters=batch_parameters)
+print(batch.validate(expectation))
+```
+
+## How Batch Definitions organize results
+
+You can attach multiple Batch Definitions to a single Data Asset. This allows further subdivision of Validation Results — for example, one Batch Definition for automated nightly runs and another for ad-hoc manual checks — even when the underlying data is the same DataFrame.

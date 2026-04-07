@@ -1,0 +1,145 @@
+---
+title: "Installation"
+description: "Install GX Core and optional integrations for your data sources."
+keywords: ["great expectations", "install", "pip", "python", "gx core", "setup"]
+---
+
+GX Core is a Python library. This guide covers how to install it in a local Python environment and how to add optional dependencies for specific data sources.
+
+## Prerequisites
+
+- Python 3.10–3.13
+- `pip` (latest recommended)
+- Permissions to install packages in your environment
+
+<Tip>
+Use a virtual environment to isolate your GX Core installation from other Python projects. This prevents dependency conflicts and makes upgrades easier.
+
+```bash
+python -m venv my_venv
+source my_venv/bin/activate  # On Windows: my_venv\Scripts\activate
+```
+</Tip>
+
+## Install GX Core
+
+<Steps>
+  <Step title="Upgrade pip">
+    Ensure you have the latest version of `pip` before installing:
+
+    ```bash
+    python -m ensurepip --upgrade
+    ```
+  </Step>
+
+  <Step title="Install the GX Core library">
+    Run the following command to install the base GX Core package:
+
+    ```bash
+    pip install great_expectations
+    ```
+  </Step>
+
+  <Step title="Verify the installation">
+    Confirm that GX Core installed correctly by importing it and printing the version:
+
+    ```python
+    import great_expectations as gx
+
+    print(gx.__version__)
+    ```
+
+    If the installation was successful, the version string is printed (for example, `1.4.2`).
+  </Step>
+</Steps>
+
+## Install optional extras
+
+Some data sources and environments require additional Python libraries that are not included in the base installation. Install the extras that match your data source.
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```bash
+    pip install 'great_expectations[postgresql]'
+    ```
+
+    Installs `psycopg2` and related SQLAlchemy dialect support for PostgreSQL.
+  </Tab>
+
+  <Tab title="Snowflake">
+    ```bash
+    pip install 'great_expectations[snowflake]'
+    ```
+
+    Installs the Snowflake SQLAlchemy dialect. Snowflake requires key-pair authentication — password authentication is deprecated.
+  </Tab>
+
+  <Tab title="Spark">
+    ```bash
+    pip install 'great_expectations[spark]'
+    ```
+
+    Installs PySpark support for validating data in Spark DataFrames and file formats such as CSV and Parquet.
+  </Tab>
+
+  <Tab title="Google Cloud Storage">
+    ```bash
+    pip install 'great_expectations[bigquery]'
+    ```
+
+    Installs GCP dependencies (`gcsfs`, BigQuery dialect). You also need a GCP service account and the `GOOGLE_APPLICATION_CREDENTIALS` environment variable set.
+  </Tab>
+
+  <Tab title="Amazon S3">
+    ```bash
+    pip install 'great_expectations[s3]'
+    ```
+
+    Installs `boto3` for accessing objects in Amazon S3. You also need the AWS CLI configured with valid credentials.
+  </Tab>
+
+  <Tab title="Azure Blob Storage">
+    ```bash
+    pip install 'great_expectations[azure]'
+    ```
+
+    Installs Azure Blob Storage dependencies. You need an Azure Storage account and connection string.
+  </Tab>
+</Tabs>
+
+## All available extras
+
+The following table lists every available optional dependency set:
+
+| Extra | Command |
+|---|---|
+| Amazon S3 | `pip install 'great_expectations[s3]'` |
+| AWS Athena | `pip install 'great_expectations[athena]'` |
+| Azure Blob Storage | `pip install 'great_expectations[azure]'` |
+| BigQuery | `pip install 'great_expectations[bigquery]'` |
+| Databricks | `pip install 'great_expectations[databricks]'` |
+| Google Cloud Storage | `pip install 'great_expectations[bigquery]'` |
+| Microsoft Fabric | `pip install 'great_expectations[fabric]'` |
+| Microsoft SQL Server | `pip install 'great_expectations[sql-server]'` |
+| PostgreSQL | `pip install 'great_expectations[postgresql]'` |
+| Redshift (SQLAlchemy 1.4) | `pip install 'great_expectations[redshift]'` |
+| Redshift GX fork (SQLAlchemy 2.0) | `pip install 'great_expectations[gx-redshift]'` |
+| Snowflake | `pip install 'great_expectations[snowflake]'` |
+| Spark | `pip install 'great_expectations[spark]'` |
+
+<Note>
+Multiple extras can be combined in a single install command:
+
+```bash
+pip install 'great_expectations[postgresql,s3]'
+```
+</Note>
+
+## Python version compatibility
+
+GX Core supports Python 3.10 through 3.13. The following core dependencies are version-aware:
+
+| Dependency | Python 3.10–3.11 | Python 3.12 | Python 3.13 |
+|---|---|---|---|
+| `numpy` | `>=1.22.4` | `>=1.26.0` | `>=2.1.0` |
+| `pandas` | `>=1.3.0` | `>=1.3.0` | `>=2.2.3` |

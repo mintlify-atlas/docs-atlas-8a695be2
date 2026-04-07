@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Great Expectations",
+  "projectType": "sdk-library",
+  "projectName": "Great Expectations",
+  "projectDescription": "A Python library for defining and validating data quality expectations, enabling data teams to write expressive, automated tests for their data pipelines.",
   "theme": "palm",
-  "colors": {
-    "primary": "#444444",
-    "light": "#fc6413",
-    "dark": "#ffffff"
-  },
-  "favicon": "/favicon.svg",
-  "logo": {
-    "light": "https://media.brand.dev/0ff8dd8b-20f8-4d20-93ad-d19c5805a291.svg",
-    "dark": "https://media.brand.dev/eaf4a080-331b-4b1f-9941-3c07c1e00d47.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/great-expectations/great_expectations"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/great-expectations/great_expectations"
-    }
-  },
+  "primaryColor": "#444444",
+  "lightColor": "#fc6413",
+  "darkColor": "#ffffff",
   "navigation": {
     "tabs": [
       {
@@ -108,5 +91,32 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Expressive Expectations: 50+ built-in data quality assertions for columns, tables, and custom SQL",
+    "Fluent API for connecting to Pandas, Spark, SQL databases, and cloud object storage",
+    "Expectation Suites for grouping and reusing data quality checks",
+    "Validation Definitions and Checkpoints for production data pipeline integration",
+    "Automated Data Docs: human-readable HTML reports of validation results",
+    "Extensible custom Expectations via subclassing",
+    "Actions system for Slack/email/custom alerting on validation results",
+    "Supports ephemeral, file-based, and cloud Data Context backends"
+  ],
+  "publicApiSurface": [
+    "gx.get_context()",
+    "gx.Checkpoint",
+    "gx.ExpectationSuite",
+    "gx.ValidationDefinition",
+    "gx.ResultFormat",
+    "gx.RunIdentifier",
+    "DataContext.data_sources",
+    "DataContext.suites",
+    "DataContext.checkpoints",
+    "DataContext.validation_definitions",
+    "Datasource.add_batch_definition()",
+    "BatchDefinition.get_batch()",
+    "ExpectationSuite.add_expectation()",
+    "Checkpoint.run()",
+    "ValidationDefinition.run()"
+  ]
 }

@@ -1,0 +1,107 @@
+---
+title: "Validation Definitions"
+description: "Link a Batch Definition to an Expectation Suite to define what to validate."
+keywords: ["validation definition", "batch definition", "expectation suite", "great expectations"]
+---
+
+A Validation Definition is the pairing of a Batch Definition (which describes your data) with an Expectation Suite (which describes your data quality rules). It is the foundational unit of validation in GX Core — before you can validate data, you need a Validation Definition that binds together _what_ to validate and _what to check_.
+
+Once created, a Validation Definition can be run on its own for exploratory testing or grouped into a Checkpoint for production workflows.
+
+<Note>
+  A Validation Definition requires a configured Data Context, a Batch Definition (from a Data Source and Data Asset), and an Expectation Suite with at least one Expectation.
+</Note>
+
+## Create a Validation Definition
+
+<Steps>
+  <Step title="Retrieve your Expectation Suite">
+    Fetch an existing Expectation Suite from your Data Context by name:
+
+    ```python
+    suite = context.suites.get(name="my_expectation_suite")
+    ```
+  </Step>
+
+  <Step title="Retrieve your Batch Definition">
+    Fetch the Batch Definition that points to the data you want to validate:
+
+    ```python
+    batch_definition = (
+        context.data_sources
+        .get("my_datasource")
+        .get_asset("my_data_asset")
+        .get_batch_definition("my_batch_definition")
+    )
+    ```
+  </Step>
+
+  <Step title="Create the Validation Definition">
+    Instantiate a `ValidationDefinition` by providing a unique name, the Batch Definition, and the Expectation Suite:
+
+    ```python
+    import great_expectations as gx
+
+    validation_definition = gx.ValidationDefinition(
+        name="my_validation_definition",
+        data=batch_definition,
+        suite=suite,
+    )
+    ```
+
+    The `name` you choose should describe the purpose of this validation (for example, `"monthly_revenue_checks"` or `"orders_table_nullability"`).
+  </Step>
+
+  <Step title="Save to your Data Context">
+    Add the Validation Definition to your Data Context so it can be retrieved later and used in Checkpoints:
+
+    ```python
+    validation_definition = context.validation_definitions.add(validation_definition)
+    ```
+
+    <Tip>
+      `context.validation_definitions.add()` returns the saved object (with its assigned `id`). Reassign the variable to get the updated instance.
+    </Tip>
+  </Step>
+</Steps>
+
+## Retrieve Validation Definitions
+
+### Retrieve a single Validation Definition
+
+Fetch a previously saved Validation Definition by name:
+
+```python
+validation_definition = context.validation_definitions.get(name="my_validation_definition")
+```
+
+### List all Validation Definitions
+
+Retrieve every Validation Definition stored in the Data Context:
+
+```python
+all_definitions = context.validation_definitions.all()
+
+for vd in all_definitions:
+    print(vd.name)
+```
+
+## ValidationDefinition fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `str` | Unique name for the Validation Definition. |
+| `data` | `BatchDefinition` | The Batch Definition that selects data to validate. |
+| `suite` | `ExpectationSuite` | The Expectation Suite that defines quality rules. |
+| `id` | `str \| None` | Assigned automatically when saved to a Data Context. |
+
+## What comes next
+
+<CardGroup cols={2}>
+  <Card title="Run Validations" icon="play" href="/validate/run-validations">
+    Execute a Validation Definition and inspect the results.
+  </Card>
+  <Card title="Checkpoints" icon="list-checks" href="/validate/checkpoints">
+    Group multiple Validation Definitions and run them together.
+  </Card>
+</CardGroup>

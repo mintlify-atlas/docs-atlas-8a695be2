@@ -1,0 +1,327 @@
+---
+title: "Pandas Integration"
+description: Full reference for connecting GX Core to Pandas DataFrames and files
+---
+
+
+Great Expectations integrates natively with Pandas, supporting both in-memory DataFrames and a wide range of file formats. The Pandas integration requires no extra install — the base `great_expectations` package is sufficient.
+
+## Installation
+
+```bash
+pip install great_expectations
+```
+
+## Data Source Types
+
+GX provides five Pandas data source types, each suited to a different data location.
+
+<Tabs>
+  <Tab title="PandasDatasource (in-memory)">
+    Use `add_pandas` when your data is already loaded as a Pandas DataFrame in memory. This is the most direct way to validate a DataFrame without reading from disk or a remote store.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    datasource = context.data_sources.add_pandas(name="my_pandas_datasource")
+    ```
+
+    **Asset types available:**
+
+    | Method | Description |
+    |--------|-------------|
+    | `add_dataframe_asset(name)` | Register a named asset backed by an in-memory DataFrame |
+    | `add_csv_asset(name, filepath_or_buffer)` | Read a CSV file or URL into a single batch |
+    | `add_json_asset(name, path_or_buf)` | Read a JSON file or URL |
+    | `add_parquet_asset(name, path)` | Read a Parquet file or URL |
+    | `add_excel_asset(name, io)` | Read an Excel file |
+    | `add_feather_asset(name, path)` | Read a Feather file |
+    | `add_orc_asset(name, path)` | Read an ORC file |
+    | `add_pickle_asset(name, filepath_or_buffer)` | Read a Pickle file |
+    | `add_hdf_asset(name, path_or_buf)` | Read an HDF5 file |
+    | `add_html_asset(name, io)` | Read an HTML file containing tables |
+    | `add_fwf_asset(name, filepath_or_buffer)` | Read a fixed-width format file |
+    | `add_sas_asset(name, filepath_or_buffer)` | Read a SAS file |
+    | `add_spss_asset(name, path)` | Read an SPSS file |
+    | `add_stata_asset(name, filepath_or_buffer)` | Read a Stata file |
+    | `add_xml_asset(name, path_or_buffer)` | Read an XML file |
+    | `add_gbq_asset(name, query)` | Read from Google BigQuery via pandas-gbq |
+
+    **DataFrame asset example:**
+
+    ```python
+    import pandas as pd
+
+    datasource = context.data_sources.add_pandas(name="my_pandas_datasource")
+
+    # Register a named DataFrame asset
+    asset = datasource.add_dataframe_asset(name="my_dataframe_asset")
+
+    # Add a batch definition (whole DataFrame at once)
+    batch_definition = asset.add_batch_definition_whole_dataframe(name="full_df")
+
+    # Build a batch request with the actual DataFrame
+    df = pd.read_csv("data/transactions.csv")
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    ```
+
+    <Tip>
+      You can also use `datasource.read_dataframe(df)` for a one-shot ephemeral batch without persisting an asset.
+    </Tip>
+  </Tab>
+
+  <Tab title="PandasFilesystemDatasource">
+    Use `add_pandas_filesystem` to connect to files stored on a local (or network-mounted) filesystem directory. GX uses a glob pattern to discover files and a regex to extract batch parameters from filenames.
+
+    ```python
+    datasource = context.data_sources.add_pandas_filesystem(
+        name="my_filesystem_datasource",
+        base_directory="/data/transactions",
+    )
+    ```
+
+    **Asset types available:**
+
+    | Method | Description |
+    |--------|-------------|
+    | `add_csv_asset(name, batching_regex)` | CSV files matching a filename regex |
+    | `add_parquet_asset(name, batching_regex)` | Parquet files matching a filename regex |
+    | `add_json_asset(name, batching_regex)` | JSON files matching a filename regex |
+    | `add_excel_asset(name, batching_regex)` | Excel files matching a filename regex |
+    | `add_feather_asset(name, batching_regex)` | Feather files matching a filename regex |
+    | `add_orc_asset(name, batching_regex)` | ORC files matching a filename regex |
+
+    **Filesystem asset example with daily batching:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_pandas_filesystem(
+        name="transactions_fs",
+        base_directory="/data/transactions",
+    )
+
+    asset = datasource.add_csv_asset(
+        name="daily_transactions",
+        batching_regex=re.compile(r"transactions_(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv"),
+    )
+
+    # Partition by day — regex must contain year, month, day groups
+    batch_definition = asset.add_batch_definition_daily(
+        name="daily",
+        regex=r"transactions_(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv",
+    )
+
+    # Retrieve the most recent day's batch
+    batch = batch_definition.get_batch()
+    ```
+
+    **Batch Definition methods for file assets:**
+
+    | Method | Required regex groups | Description |
+    |--------|----------------------|-------------|
+    | `add_batch_definition_path(name, path)` | None | Match a single specific file path |
+    | `add_batch_definition_yearly(name, regex)` | `year` | One batch per year |
+    | `add_batch_definition_monthly(name, regex)` | `year`, `month` | One batch per month |
+    | `add_batch_definition_daily(name, regex)` | `year`, `month`, `day` | One batch per day |
+  </Tab>
+
+  <Tab title="PandasS3Datasource">
+    Use `add_pandas_s3` to connect to CSV, Parquet, JSON, or other file formats stored in AWS S3. Authentication uses `boto3` under the hood.
+
+    ```python
+    datasource = context.data_sources.add_pandas_s3(
+        name="my_s3_datasource",
+        bucket="my-data-bucket",
+        boto3_options={},  # Optional boto3 session kwargs (e.g. region_name, profile_name)
+    )
+    ```
+
+    **Example with monthly partitioning:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_pandas_s3(
+        name="s3_transactions",
+        bucket="my-data-bucket",
+        boto3_options={"region_name": "us-east-1"},
+    )
+
+    asset = datasource.add_csv_asset(
+        name="monthly_transactions",
+        batching_regex=re.compile(
+            r"transactions/(?P<year>\d{4})/(?P<month>\d{2})/transactions\.csv"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_monthly(
+        name="monthly",
+        regex=r"transactions/(?P<year>\d{4})/(?P<month>\d{2})/transactions\.csv",
+    )
+    ```
+
+    <Note>
+      Ensure the `boto3` package is installed and your AWS credentials are configured (via environment variables, `~/.aws/credentials`, or an IAM role).
+    </Note>
+  </Tab>
+
+  <Tab title="PandasAzureBlobStorageDatasource">
+    Use `add_pandas_abs` to connect to files stored in Azure Blob Storage.
+
+    ```python
+    datasource = context.data_sources.add_pandas_abs(
+        name="my_azure_datasource",
+        azure_options={
+            "account_url": "https://<account>.blob.core.windows.net",
+            "credential": "<sas_token_or_account_key>",
+        },
+    )
+    ```
+
+    **Example:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_pandas_abs(
+        name="azure_transactions",
+        azure_options={
+            "account_url": "https://mystorageaccount.blob.core.windows.net",
+            "credential": "my-sas-token",
+        },
+    )
+
+    asset = datasource.add_parquet_asset(
+        name="daily_snapshots",
+        batching_regex=re.compile(
+            r"container/snapshots/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.parquet"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_daily(
+        name="daily",
+        regex=r"container/snapshots/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.parquet",
+    )
+    ```
+
+    <Note>
+      The `azure-storage-blob` package must be installed. Pass authentication credentials via the `azure_options` dictionary.
+    </Note>
+  </Tab>
+
+  <Tab title="PandasGCSDatasource">
+    Use `add_pandas_gcs` to connect to files stored in Google Cloud Storage.
+
+    ```python
+    datasource = context.data_sources.add_pandas_gcs(
+        name="my_gcs_datasource",
+        bucket_or_name="my-gcs-bucket",
+        gcs_options={},  # Optional gcsfs kwargs (e.g. project, token)
+    )
+    ```
+
+    **Example:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_pandas_gcs(
+        name="gcs_transactions",
+        bucket_or_name="my-gcs-bucket",
+        gcs_options={"project": "my-gcp-project"},
+    )
+
+    asset = datasource.add_csv_asset(
+        name="monthly_reports",
+        batching_regex=re.compile(
+            r"reports/(?P<year>\d{4})-(?P<month>\d{2})/report\.csv"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_monthly(
+        name="monthly",
+        regex=r"reports/(?P<year>\d{4})-(?P<month>\d{2})/report\.csv",
+    )
+    ```
+
+    <Note>
+      The `gcsfs` package must be installed. Authenticate via application default credentials or by passing `token` in `gcs_options`.
+    </Note>
+  </Tab>
+</Tabs>
+
+## End-to-End Validation Workflow
+
+The following example demonstrates a full GX Core workflow with an in-memory Pandas DataFrame:
+
+<Steps>
+  <Step title="Create a Data Context">
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    ```
+  </Step>
+
+  <Step title="Connect to data">
+    ```python
+    import pandas as pd
+
+    datasource = context.data_sources.add_pandas(name="transactions")
+    asset = datasource.add_dataframe_asset(name="daily_batch")
+    batch_definition = asset.add_batch_definition_whole_dataframe(name="full")
+
+    df = pd.DataFrame({
+        "amount": [100.0, 200.0, 150.0],
+        "status": ["success", "success", "failed"],
+    })
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    ```
+  </Step>
+
+  <Step title="Define Expectations">
+    ```python
+    suite = context.suites.add(gx.ExpectationSuite(name="transaction_suite"))
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="amount", min_value=0, max_value=10000
+        )
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeInSet(
+            column="status", value_set=["success", "failed", "pending"]
+        )
+    )
+    ```
+  </Step>
+
+  <Step title="Run validation">
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="transaction_validation",
+            data=batch_definition,
+            suite=suite,
+        )
+    )
+    results = validation_definition.run(batch_parameters={"dataframe": df})
+    print(results)
+    ```
+  </Step>
+</Steps>
+
+## Batch Definition Reference
+
+| Method | Asset types | Description |
+|--------|-------------|-------------|
+| `add_batch_definition_whole_dataframe(name)` | `DataFrameAsset` | Treats the entire DataFrame as a single batch |
+| `add_batch_definition_path(name, path)` | File assets | Matches a single file by path |
+| `add_batch_definition_yearly(name, regex)` | File assets | Groups files by year extracted from filename |
+| `add_batch_definition_monthly(name, regex)` | File assets | Groups files by year + month from filename |
+| `add_batch_definition_daily(name, regex)` | File assets | Groups files by year + month + day from filename |
+
+<Warning>
+  The `add_batch_definition_monthly` and `add_batch_definition_daily` methods require a regex that captures named groups (`year`, `month`, `day`). Providing a regex with missing or extra groups raises a `RegexMissingRequiredGroupsError` or `RegexUnknownGroupsError`.
+</Warning>

@@ -1,0 +1,262 @@
+---
+title: "Create Expectations"
+description: "Instantiate Expectations to validate specific data quality properties and test them interactively against sample data."
+keywords: ["great expectations", "create expectation", "expectation parameters", "validate", "data quality"]
+---
+
+An Expectation is a verifiable assertion about your data. Creating an Expectation produces a Python object you can add to an Expectation Suite, test interactively against a Batch of data, or pass runtime parameters at Checkpoint execution time.
+
+## Prerequisites
+
+- Python 3.10 or later installed.
+- GX Core installed (`pip install great_expectations`).
+
+## Import Expectations
+
+All built-in Expectations are available from the `great_expectations.expectations` module. You can import specific classes directly or use the `gx.expectations` namespace:
+
+```python
+import great_expectations as gx
+
+# Access any Expectation through the gx.expectations namespace
+from great_expectations.expectations import (
+    ExpectColumnValuesToNotBeNull,
+    ExpectColumnValuesToBeBetween,
+    ExpectColumnValuesToBeInSet,
+    ExpectTableRowCountToBeBetween,
+    ExpectColumnToExist,
+)
+```
+
+## Create Expectations with preset parameters
+
+Pass all parameters when instantiating an Expectation to define its behavior up front. This is the most common pattern.
+
+<CodeGroup>
+
+```python Column not null
+import great_expectations as gx
+
+# Validates that at least 95% of values in "passenger_count" are non-null
+expectation = gx.expectations.ExpectColumnValuesToNotBeNull(
+    column="passenger_count",
+    mostly=0.95,
+)
+```
+
+```python Column values between
+import great_expectations as gx
+
+# Validates that every value in "passenger_count" is between 1 and 6 inclusive
+expectation = gx.expectations.ExpectColumnValuesToBeBetween(
+    column="passenger_count",
+    min_value=1,
+    max_value=6,
+)
+```
+
+```python Column values in set
+import great_expectations as gx
+
+# Validates that payment_type is always one of the allowed codes
+expectation = gx.expectations.ExpectColumnValuesToBeInSet(
+    column="payment_type",
+    value_set=[1, 2, 3, 4, 5, 6],
+)
+```
+
+```python Table row count
+import great_expectations as gx
+
+# Validates that the table has between 1,000 and 1,000,000 rows
+expectation = gx.expectations.ExpectTableRowCountToBeBetween(
+    min_value=1_000,
+    max_value=1_000_000,
+)
+```
+
+```python Column exists
+import great_expectations as gx
+
+# Validates that the "fare_amount" column is present in the table
+expectation = gx.expectations.ExpectColumnToExist(
+    column="fare_amount",
+)
+```
+
+```python Column max between
+import great_expectations as gx
+
+# Validates that the maximum fare_amount is between $10 and $500
+# severity="warning" means a failure is flagged but not treated as critical
+expectation = gx.expectations.ExpectColumnMaxToBeBetween(
+    column="fare_amount",
+    min_value=10.00,
+    max_value=500.00,
+    severity="warning",
+)
+```
+
+</CodeGroup>
+
+<Note>
+`min_value` and `max_value` are both inclusive by default. Set `strict_min=True` or `strict_max=True` to use strict inequality (`>` or `<` instead of `>=` or `<=`).
+</Note>
+
+## Create Expectations with runtime parameters
+
+Instead of hardcoding values, you can define Expectations that accept parameters at runtime. This is useful when parameter values change between runs (for example, expected row counts that grow over time).
+
+To define a runtime parameter, pass a dictionary with a `$PARAMETER` key as the value for any non-required argument:
+
+```python
+import great_expectations as gx
+
+# Both min_value and max_value will be supplied at runtime
+passenger_expectation = gx.expectations.ExpectColumnMaxToBeBetween(
+    column="passenger_count",
+    min_value={"$PARAMETER": "expect_passenger_max_to_be_above"},
+    max_value={"$PARAMETER": "expect_passenger_max_to_be_below"},
+)
+
+fare_expectation = gx.expectations.ExpectColumnMaxToBeBetween(
+    column="fare_amount",
+    min_value={"$PARAMETER": "expect_fare_max_to_be_above"},
+    max_value={"$PARAMETER": "expect_fare_max_to_be_below"},
+)
+```
+
+At runtime, provide a dictionary mapping each `$PARAMETER` key to its value:
+
+```python
+runtime_expectation_parameters = {
+    "expect_passenger_max_to_be_above": 4,
+    "expect_passenger_max_to_be_below": 6,
+    "expect_fare_max_to_be_above": 10.00,
+    "expect_fare_max_to_be_below": 500.00,
+}
+```
+
+Pass this dictionary to `batch.validate()` or a Checkpoint's `run()` method via the `expectation_parameters` argument.
+
+## Test an Expectation interactively
+
+You can validate a single Expectation against a Batch of data without creating a full Checkpoint. This is useful when exploring new data or building out an Expectation Suite incrementally.
+
+<Steps>
+
+<Step title="Retrieve a Batch of sample data">
+
+Use the built-in pandas default Data Source to load a local CSV file into a Batch:
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+file_path = "./data/yellow_tripdata_sample_2019-01.csv"
+batch = context.data_sources.pandas_default.read_csv(file_path)
+```
+
+</Step>
+
+<Step title="Define the Expectation">
+
+Create the Expectation with the parameters you want to test:
+
+```python
+expectation = gx.expectations.ExpectColumnMaxToBeBetween(
+    column="passenger_count",
+    min_value=1,
+    max_value=6,
+)
+```
+
+</Step>
+
+<Step title="Validate the Expectation against the Batch">
+
+Call `batch.validate()` with the Expectation. The result is an `ExpectationValidationResult` object:
+
+```python
+validation_result = batch.validate(expectation)
+print(validation_result)
+```
+
+The output looks like this when the Expectation passes:
+
+```json
+{
+  "success": true,
+  "expectation_config": {
+    "expectation_type": "expect_column_max_to_be_between",
+    "severity": "critical",
+    "kwargs": {
+      "column": "passenger_count",
+      "min_value": 1.0,
+      "max_value": 6.0
+    },
+    "meta": {}
+  },
+  "result": {
+    "observed_value": 6
+  },
+  "exception_info": {
+    "raised_exception": false,
+    "exception_traceback": null,
+    "exception_message": null
+  }
+}
+```
+
+Key fields to check:
+- `success`: `true` means the data satisfies the Expectation.
+- `result.observed_value`: The actual computed value from the data.
+- `expectation_config.kwargs`: The parameters that were evaluated.
+
+</Step>
+
+<Step title="Adjust parameters if needed">
+
+If the result is unexpected, modify the Expectation's attributes directly and retest without recreating the object:
+
+```python
+# Update the parameter values on the existing object
+expectation.min_value = 1
+expectation.max_value = 8
+
+# Validate again with the updated parameters
+new_result = batch.validate(expectation)
+print(new_result)
+```
+
+</Step>
+
+</Steps>
+
+### Validate with runtime parameters
+
+When using `$PARAMETER` lookups, pass the values in `expectation_parameters`:
+
+```python
+runtime_expectation_parameters = {
+    "expect_passenger_max_to_be_above": 1,
+    "expect_passenger_max_to_be_below": 6,
+}
+
+validation_result = batch.validate(
+    expectation,
+    expectation_parameters=runtime_expectation_parameters,
+)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Expectation Suites" icon="layer-group" href="/expectations/expectation-suites">
+    Organize your Expectations into a Suite for batch validation workflows.
+  </Card>
+  <Card title="Custom Expectations" icon="code" href="/expectations/custom-expectations">
+    Define reusable Expectation subclasses with built-in defaults and descriptions.
+  </Card>
+</CardGroup>

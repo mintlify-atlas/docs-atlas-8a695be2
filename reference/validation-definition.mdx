@@ -1,0 +1,179 @@
+---
+title: "ValidationDefinition"
+description: "Associates a BatchDefinition with an ExpectationSuite and runs validation. The core unit of data quality checking in GX Core."
+---
+
+A `ValidationDefinition` pairs a `BatchDefinition` (which describes how to load a specific batch of data) with an [`ExpectationSuite`](/reference/expectation-suite) (which describes the quality rules to apply). Calling `.run()` on a `ValidationDefinition` loads the batch, evaluates every expectation in the suite against it, and returns a detailed result.
+
+## Constructor
+
+```python
+import great_expectations as gx
+
+validation_definition = gx.ValidationDefinition(
+    name="my_validation",
+    data=batch_definition,
+    suite=suite,
+)
+```
+
+<ParamField path="name" type="str" required>
+  A unique name for this validation definition. Used to retrieve it from the context store and to identify it in validation results and checkpoints.
+</ParamField>
+
+<ParamField path="data" type="BatchDefinition" required>
+  The `BatchDefinition` that specifies how to load a batch of data. A `BatchDefinition` belongs to a `DataAsset`, which belongs to a `DataSource`. Obtain it via the data source API before constructing a `ValidationDefinition`.
+</ParamField>
+
+<ParamField path="suite" type="ExpectationSuite" required>
+  The `ExpectationSuite` containing the expectations to evaluate. The suite must exist in the context store before the validation definition can be run.
+</ParamField>
+
+<ParamField path="id" type="str | None" default="None">
+  Assigned automatically when the validation definition is persisted via `context.validation_definitions.add()`. Do not set this manually.
+</ParamField>
+
+## Attributes
+
+### validation_definition.batch_definition
+
+Returns the `BatchDefinition` associated with this validation. Equivalent to `validation_definition.data`.
+
+### validation_definition.asset
+
+Returns the parent `DataAsset` of the batch definition.
+
+## run()
+
+Loads the specified batch of data and evaluates all expectations in the suite against it.
+
+```python
+result = validation_definition.run(
+    batch_parameters={"year": 2024, "month": 1},
+    result_format=gx.ResultFormat.SUMMARY,
+)
+```
+
+<ParamField path="batch_parameters" type="dict | None" default="None">
+  A dictionary of parameters used to select the specific batch to validate. The required keys depend on the `BatchDefinition`:
+
+  - Whole table: no parameters needed (pass `None` or `{}`)
+  - Yearly partitioned: `{"year": 2024}`
+  - Monthly partitioned: `{"year": 2024, "month": 1}`
+  - Daily partitioned: `{"year": 2024, "month": 1, "day": 15}`
+</ParamField>
+
+<ParamField path="result_format" type="ResultFormat | str" default="ResultFormat.SUMMARY">
+  Controls how much detail is included in the result. See [ResultFormat](/reference/result-format) for all options.
+</ParamField>
+
+<ParamField path="expectation_parameters" type="dict | None" default="None">
+  A dictionary of runtime values for parameterized expectations that use the `$PARAMETER` syntax. Keys are parameter names; values are the runtime values.
+</ParamField>
+
+<ParamField path="run_id" type="RunIdentifier | None" default="None">
+  An optional identifier for the run. When `None`, a `RunIdentifier` is generated automatically using the current UTC timestamp. In most cases, leave this as `None`.
+</ParamField>
+
+**Returns:** `ExpectationSuiteValidationResult`
+
+## Result structure
+
+The return value of `run()` is an `ExpectationSuiteValidationResult`. Its most important attributes are:
+
+<ResponseField name="success" type="bool">
+  `True` if every expectation in the suite passed. `False` if one or more expectations failed.
+</ResponseField>
+
+<ResponseField name="results" type="list[ExpectationValidationResult]">
+  A list of individual expectation results.
+
+  <Expandable title="ExpectationValidationResult fields">
+    <ResponseField name="success" type="bool">
+      Whether this individual expectation passed.
+    </ResponseField>
+    <ResponseField name="expectation_config" type="ExpectationConfiguration">
+      The expectation that was evaluated, including its type and parameters.
+    </ResponseField>
+    <ResponseField name="result" type="dict">
+      Diagnostic information about the result. Contents vary by `result_format`. May include `observed_value`, `element_count`, `unexpected_count`, `unexpected_percent`, and sample unexpected values.
+    </ResponseField>
+    <ResponseField name="exception_info" type="dict">
+      Present when an expectation raised an exception during evaluation rather than returning a pass/fail result.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="statistics" type="dict">
+  Aggregate statistics for the run: total expectations evaluated, successful count, unsuccessful count, and success percent.
+</ResponseField>
+
+<ResponseField name="meta" type="dict">
+  Metadata about the run including the GX version, batch information, and run ID.
+</ResponseField>
+
+## CRUD via context
+
+```python
+# Add to context store (required before running)
+validation_def = context.validation_definitions.add(validation_def)
+
+# Retrieve by name
+validation_def = context.validation_definitions.get("my_validation")
+
+# List all
+all_defs = list(context.validation_definitions.all())
+
+# Add or update
+validation_def = context.validation_definitions.add_or_update(validation_def)
+
+# Delete by name
+context.validation_definitions.delete("my_validation")
+```
+
+## Full example
+
+```python
+import great_expectations as gx
+from great_expectations.expectations import (
+    ExpectColumnValuesToNotBeNull,
+    ExpectColumnValuesToBeBetween,
+)
+
+context = gx.get_context(mode="ephemeral")
+
+# Set up the data source and batch definition
+data_source = context.data_sources.add_pandas(name="taxi_source")
+data_asset = data_source.add_dataframe_asset(name="taxi_data")
+batch_definition = data_asset.add_batch_definition_whole_dataframe("full_batch")
+
+# Create and save an expectation suite
+suite = gx.ExpectationSuite(name="taxi_suite")
+suite = context.suites.add(suite)
+suite.add_expectation(ExpectColumnValuesToNotBeNull(column="passenger_count"))
+suite.add_expectation(
+    ExpectColumnValuesToBeBetween(column="fare_amount", min_value=0, max_value=1000)
+)
+
+# Create and save the validation definition
+validation_def = gx.ValidationDefinition(
+    name="taxi_validation",
+    data=batch_definition,
+    suite=suite,
+)
+validation_def = context.validation_definitions.add(validation_def)
+
+# Run the validation
+import pandas as pd
+
+df = pd.read_csv("taxi_data.csv")
+result = validation_def.run(
+    batch_parameters={"dataframe": df},
+    result_format=gx.ResultFormat.SUMMARY,
+)
+
+print(f"Validation passed: {result.success}")
+for r in result.results:
+    status = "PASS" if r.success else "FAIL"
+    print(f"  [{status}] {r.expectation_config.expectation_type}")
+```

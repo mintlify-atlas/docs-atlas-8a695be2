@@ -1,0 +1,382 @@
+---
+title: "Data Quality Use Cases"
+description: Common data quality dimensions and which Expectations to use for each
+---
+
+
+A comprehensive data quality strategy covers multiple dimensions of data health. Each dimension addresses a distinct class of data problems. GX provides focused Expectations for each dimension, enabling you to build targeted validation suites that catch specific failure modes early in your pipeline.
+
+<Info>
+  All Expectations below are available in both GX Cloud and GX Core. Browse the full catalog at the [GX Expectation Gallery](https://greatexpectations.io/expectations).
+</Info>
+
+<AccordionGroup>
+  <Accordion title="Schema — Validate structure and column presence">
+    **What it addresses:** Schema validation ensures that a dataset's structural blueprint matches expectations — correct column names, data types, column order, and the presence of required fields. Schema drift, whether caused by upstream system changes or format changes, can silently corrupt downstream processes.
+
+    **When to apply it:**
+    - During data ingestion from external systems
+    - When integrating data from multiple sources
+    - When migrating data between systems
+    - After format changes (e.g., CSV pipeline where types are not embedded)
+
+    **Key Expectations:**
+
+    | Expectation | Purpose |
+    |-------------|---------|
+    | `ExpectColumnToExist` | Ensures a named column is present in the dataset |
+    | `ExpectTableColumnsToMatchOrderedList` | Validates that columns appear in an exact specified order |
+    | `ExpectTableColumnCountToBeBetween` | Validates that the total number of columns falls within a range |
+    | `ExpectColumnValuesToBeOfType` | Validates that all values in a column are a specific data type |
+    | `ExpectColumnValuesToBeInTypeList` | Validates that column values belong to one of several permitted types |
+
+    **Example:**
+
+    ```python
+    import great_expectations as gx
+
+    suite = gx.ExpectationSuite(name="schema_checks")
+
+    # Ensure required columns exist
+    suite.add_expectation(
+        gx.expectations.ExpectColumnToExist(column="order_id")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnToExist(column="amount")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnToExist(column="created_at")
+    )
+
+    # Validate column order matches the contract
+    suite.add_expectation(
+        gx.expectations.ExpectTableColumnsToMatchOrderedList(
+            column_list=["order_id", "customer_id", "amount", "status", "created_at"]
+        )
+    )
+
+    # Enforce data type on a critical numeric column
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeOfType(column="amount", type_="float")
+    )
+    ```
+
+    <Tip>
+      Combine `ExpectColumnToExist` with `ExpectTableColumnsToMatchOrderedList` for full structural coverage. Use `ExpectColumnValuesToBeOfType` on any column that downstream code depends on being a specific type.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Volume — Validate record count bounds">
+    **What it addresses:** Volume validation checks that a dataset contains the expected number of records. Unexpected volume changes — too few rows or too many — often indicate upstream pipeline failures, data loss, duplicate ingestion, or runaway processes.
+
+    **When to apply it:**
+    - After data ingestion to verify all expected records arrived
+    - On partitioned data (daily loads, batch windows) to verify expected record counts
+    - During ETL pipeline monitoring to detect early signs of data issues
+    - For reconciliation checks between source and target systems
+
+    **Key Expectations:**
+
+    | Expectation | Purpose |
+    |-------------|---------|
+    | `ExpectTableRowCountToBeBetween` | Row count falls within a min/max range |
+    | `ExpectTableRowCountToEqual` | Row count is exactly a specified value |
+    | `ExpectTableRowCountToEqualOtherTable` | Row count matches the count of another table |
+
+    **Example:**
+
+    ```python
+    suite = gx.ExpectationSuite(name="volume_checks")
+
+    # Validate expected daily load range
+    suite.add_expectation(
+        gx.expectations.ExpectTableRowCountToBeBetween(
+            min_value=5000, max_value=50000
+        )
+    )
+    ```
+
+    For exact batch reconciliation:
+
+    ```python
+    # Ensure every row from the source arrived in the target
+    suite.add_expectation(
+        gx.expectations.ExpectTableRowCountToEqualOtherTable(
+            other_table_name="source_orders"
+        )
+    )
+    ```
+
+    <Tip>
+      Combine `ExpectTableRowCountToBeBetween` with time-partitioned batch definitions to validate volume for specific date windows (e.g., yesterday's load). Regularly adjust `min_value` and `max_value` thresholds as data growth patterns change.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Missingness — Detect null and missing values">
+    **What it addresses:** Missingness validation identifies gaps in data — unexpected `NULL` values in critical columns, or columns that contain more or fewer nulls than business rules allow. Undetected missingness causes silent failures in calculations, joins, and ML feature pipelines.
+
+    **When to apply it:**
+    - On columns that are required by downstream joins or aggregations
+    - On columns that drive business metrics
+    - When monitoring data completeness over time
+    - When some degree of missingness is expected but must be bounded
+
+    **Key Expectations:**
+
+    | Expectation | Purpose |
+    |-------------|---------|
+    | `ExpectColumnValuesToNotBeNull` | Ensures no `NULL` values exist in a column |
+    | `ExpectColumnValuesToBeNull` | Ensures all values in a column are `NULL` (for columns expected to be empty) |
+    | `ExpectColumnProportionOfNonNullValuesToBeBetween` | Validates that the fraction of non-null values is within a specified range |
+
+    **Example:**
+
+    ```python
+    suite = gx.ExpectationSuite(name="missingness_checks")
+
+    # Critical fields must always be populated
+    for col in ["transaction_id", "amount", "user_id"]:
+        suite.add_expectation(
+            gx.expectations.ExpectColumnValuesToNotBeNull(column=col)
+        )
+
+    # Optional field — allow some nulls but not unbounded growth
+    suite.add_expectation(
+        gx.expectations.ExpectColumnProportionOfNonNullValuesToBeBetween(
+            column="secondary_email",
+            min_value=0.0,
+            max_value=1.0,
+        )
+    )
+
+    # Feedback column is expected to be empty at ingestion time
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeNull(column="processing_errors")
+    )
+    ```
+
+    <Tip>
+      Use the `mostly` parameter on `ExpectColumnValuesToNotBeNull` to permit a small fraction of nulls. For example, `mostly=0.99` allows up to 1% nulls, making the check resilient to occasional missing values without ignoring systemic gaps.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Uniqueness — Detect duplicate values">
+    **What it addresses:** Uniqueness validation ensures that values or combinations of values that should be distinct appear only once. Duplicates in primary key fields, transaction IDs, or unique identifiers cause data corruption, inflate metrics, and break joins.
+
+    **When to apply it:**
+    - On primary key and natural key columns
+    - On columns expected to contain unique identifiers (email addresses, SSNs, UUIDs)
+    - On composite keys where the combination of multiple columns should be unique
+    - After deduplication pipeline steps to verify they worked correctly
+
+    **Key Expectations:**
+
+    | Expectation | Purpose |
+    |-------------|---------|
+    | `ExpectColumnValuesToBeUnique` | All values in the column are distinct |
+    | `ExpectCompoundColumnsToBeUnique` | Combinations of values across multiple columns are distinct |
+    | `ExpectColumnProportionOfUniqueValuesToBeBetween` | The fraction of unique values falls within a range |
+    | `ExpectColumnUniqueValueCountToBeBetween` | The count of distinct values falls within a range |
+    | `ExpectSelectColumnValuesToBeUniqueWithinRecord` | Within each row, the specified columns all have distinct values |
+
+    **Example:**
+
+    ```python
+    suite = gx.ExpectationSuite(name="uniqueness_checks")
+
+    # Primary key must be fully unique
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeUnique(column="customer_id")
+    )
+
+    # Composite key: country_code + government_id must uniquely identify a customer
+    suite.add_expectation(
+        gx.expectations.ExpectCompoundColumnsToBeUnique(
+            column_list=["country_code", "government_id"]
+        )
+    )
+
+    # Email column should be at least 95% unique
+    suite.add_expectation(
+        gx.expectations.ExpectColumnProportionOfUniqueValuesToBeBetween(
+            column="email_address",
+            min_value=0.95,
+            max_value=1.0,
+        )
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Integrity — Validate values, sets, and referential constraints">
+    **What it addresses:** Data integrity validation ensures that values conform to known business rules — they belong to an expected set, match a required format, satisfy cross-column relationships, or maintain referential consistency with related tables. Integrity failures indicate data that is structurally present but semantically wrong.
+
+    **When to apply it:**
+    - On categorical columns with a known fixed set of valid values
+    - On columns with a required format (phone numbers, account codes, ISO codes)
+    - When validating cross-column relationships (e.g., start date before end date)
+    - When ensuring financial calculations balance (sum-to-zero checks)
+    - When validating foreign key relationships between tables
+
+    **Key Expectations:**
+
+    | Expectation | Purpose |
+    |-------------|---------|
+    | `ExpectColumnValuesToBeInSet` | Values belong to a defined set of allowed values |
+    | `ExpectColumnValuesToNotBeInSet` | Values do not appear in a set of prohibited values |
+    | `ExpectColumnValuesToMatchRegex` | Values match a regular expression pattern |
+    | `ExpectColumnPairValuesToBeEqual` | Two columns have equal values row-by-row |
+    | `ExpectColumnPairValuesToBeInSet` | Pairs of values from two columns belong to an expected set |
+    | `ExpectColumnPairValuesAToBeGreaterThanB` | Values in column A are greater than values in column B |
+    | `ExpectMulticolumnSumToEqual` | The sum of multiple columns equals a specified value |
+
+    **Example:**
+
+    ```python
+    suite = gx.ExpectationSuite(name="integrity_checks")
+
+    # Status column can only contain known values
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeInSet(
+            column="status",
+            value_set=["pending", "active", "closed", "cancelled"],
+        )
+    )
+
+    # Account numbers must match a specific format
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToMatchRegex(
+            column="account_number",
+            regex=r"^\d{12}$",
+        )
+    )
+
+    # Sum-to-zero check on a financial balance table
+    suite.add_expectation(
+        gx.expectations.ExpectMulticolumnSumToEqual(
+            column_list=["sender_debit", "recipient_credit", "adjustment"],
+            sum_total=0,
+        )
+    )
+
+    # Start date must be before end date
+    suite.add_expectation(
+        gx.expectations.ExpectColumnPairValuesAToBeGreaterThanB(
+            column_A="end_date",
+            column_B="start_date",
+        )
+    )
+    ```
+
+    <Note>
+      For cross-table integrity checks (referential integrity), create a SQL view that joins the tables and apply Expectations to the view, or use a `QueryAsset` with a custom SQL query that surfaces the relationship.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Distribution — Validate statistical properties">
+    **What it addresses:** Distribution validation checks that numerical data follows expected statistical patterns — that values fall within valid ranges, that summary statistics (mean, median, standard deviation) are within expected bounds, or that the overall distribution hasn't shifted significantly compared to a reference. Distribution anomalies can indicate data corruption, sensor drift, fraud, or model covariate shift.
+
+    **When to apply it:**
+    - On numerical columns in financial, sensor, or transactional data
+    - On feature columns in ML pipelines to detect training/serving skew
+    - On aggregated metrics to detect changes in business KPIs
+    - For fraud detection (outlier identification via Z-scores)
+    - When monitoring for data drift between batches
+
+    **Key Expectations:**
+
+    | Expectation | Purpose |
+    |-------------|---------|
+    | `ExpectColumnValuesToBeBetween` | All values fall between a min and max bound |
+    | `ExpectColumnMeanToBeBetween` | The column mean falls within a specified range |
+    | `ExpectColumnMedianToBeBetween` | The column median falls within a specified range |
+    | `ExpectColumnStdevToBeBetween` | The column standard deviation falls within a range |
+    | `ExpectColumnMinToBeBetween` | The minimum value falls within a range |
+    | `ExpectColumnMaxToBeBetween` | The maximum value falls within a range |
+    | `ExpectColumnSumToBeBetween` | The sum of column values falls within a range |
+    | `ExpectColumnQuantileValuesToBeBetween` | Quantile values fall within specified bounds |
+    | `ExpectColumnValueZScoresToBeLessThan` | Z-scores of all values are below a threshold |
+    | `ExpectColumnKLDivergenceToBeLessThan` | Distribution divergence from a reference is below a threshold |
+
+    **Example:**
+
+    ```python
+    suite = gx.ExpectationSuite(name="distribution_checks")
+
+    # Purchase amounts must be within a plausible range
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="purchase_amount",
+            min_value=0.01,
+            max_value=50000.0,
+        )
+    )
+
+    # Mean purchase amount should be within historical bounds
+    suite.add_expectation(
+        gx.expectations.ExpectColumnMeanToBeBetween(
+            column="purchase_amount",
+            min_value=50.0,
+            max_value=500.0,
+        )
+    )
+
+    # Product ratings must be on a known scale
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="product_rating",
+            min_value=1.0,
+            max_value=5.0,
+        )
+    )
+
+    # Flag extreme outliers using Z-scores
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValueZScoresToBeLessThan(
+            column="purchase_amount",
+            threshold=3.0,
+            double_sided=True,
+        )
+    )
+    ```
+
+    <Tip>
+      Use `ExpectColumnKLDivergenceToBeLessThan` to detect distribution drift between the current batch and a historical reference partition. This is particularly effective for monitoring ML features over time.
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+## Combining Dimensions
+
+A production data quality suite typically combines checks from multiple dimensions. The example below applies schema, volume, missingness, and integrity checks together:
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+suite = context.suites.add(gx.ExpectationSuite(name="transactions_full_suite"))
+
+# Schema
+suite.add_expectation(gx.expectations.ExpectColumnToExist(column="transaction_id"))
+suite.add_expectation(gx.expectations.ExpectColumnToExist(column="amount"))
+suite.add_expectation(gx.expectations.ExpectColumnValuesToBeOfType(column="amount", type_="float"))
+
+# Volume
+suite.add_expectation(
+    gx.expectations.ExpectTableRowCountToBeBetween(min_value=1000, max_value=500000)
+)
+
+# Missingness
+suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="transaction_id"))
+suite.add_expectation(gx.expectations.ExpectColumnValuesToNotBeNull(column="amount"))
+
+# Integrity
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToBeInSet(
+        column="currency", value_set=["USD", "EUR", "GBP", "JPY"]
+    )
+)
+suite.add_expectation(
+    gx.expectations.ExpectColumnValuesToBeBetween(column="amount", min_value=0.01, max_value=1000000)
+)
+```

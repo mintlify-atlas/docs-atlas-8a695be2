@@ -1,0 +1,330 @@
+---
+title: "Spark Integration"
+description: Full reference for connecting GX Core to Spark DataFrames and distributed files
+---
+
+
+Great Expectations integrates with Apache Spark to validate both in-memory Spark DataFrames and files stored on distributed filesystems (HDFS, S3, GCS, Azure). The Spark integration requires installing GX with the `spark` extra.
+
+## Installation
+
+```bash
+pip install 'great_expectations[spark]'
+```
+
+<Note>
+  A running Spark session is required at validation time. GX will attempt to obtain or create a `SparkSession` via `SparkSession.getOrCreate()`. Pass `spark_config` to the data source to set Spark configuration options before the session is created.
+</Note>
+
+## Data Source Types
+
+GX provides five Spark data source types:
+
+<Tabs>
+  <Tab title="SparkDatasource (in-memory)">
+    Use `add_spark` when your data is already available as a Spark DataFrame. This is the most common pattern for validating data mid-pipeline inside a Spark application.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    datasource = context.data_sources.add_spark(name="my_spark_datasource")
+    ```
+
+    **Optional Spark configuration:**
+
+    ```python
+    datasource = context.data_sources.add_spark(
+        name="configured_spark",
+        spark_config={
+            "spark.executor.memory": "4g",
+            "spark.sql.shuffle.partitions": "200",
+        },
+    )
+    ```
+
+    **Asset types available:**
+
+    | Method | Description |
+    |--------|-------------|
+    | `add_dataframe_asset(name)` | Register a named asset backed by a Spark DataFrame |
+
+    **DataFrame asset example:**
+
+    ```python
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder.getOrCreate()
+    df = spark.read.csv("/data/transactions.csv", header=True, inferSchema=True)
+
+    datasource = context.data_sources.add_spark(name="spark_ds")
+    asset = datasource.add_dataframe_asset(name="transactions")
+
+    # Add a whole-dataframe batch definition
+    batch_definition = asset.add_batch_definition_whole_dataframe(name="full_df")
+
+    # Get a batch, supplying the DataFrame at runtime
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    ```
+
+    <Tip>
+      `add_batch_definition_whole_dataframe(name)` is the only batch definition method available for in-memory Spark DataFrames. Partitioning is not supported on `DataFrameAsset`.
+    </Tip>
+  </Tab>
+
+  <Tab title="SparkFilesystemDatasource">
+    Use `add_spark_filesystem` to connect Spark to files on a local or network-mounted filesystem path. GX uses a glob directive to discover files and a regex to parse batch parameters from filenames.
+
+    ```python
+    datasource = context.data_sources.add_spark_filesystem(
+        name="spark_filesystem",
+        base_directory="/data/transactions",
+    )
+    ```
+
+    **Asset types available:**
+
+    | Method | Description |
+    |--------|-------------|
+    | `add_csv_asset(name, batching_regex)` | CSV files matching a filename regex |
+    | `add_parquet_asset(name, batching_regex)` | Parquet files matching a filename regex |
+
+    **Example with daily file batching:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_spark_filesystem(
+        name="spark_fs_transactions",
+        base_directory="/data/transactions",
+    )
+
+    asset = datasource.add_csv_asset(
+        name="daily_transactions",
+        batching_regex=re.compile(
+            r"transactions_(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_daily(
+        name="daily",
+        regex=r"transactions_(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv",
+    )
+
+    batch = batch_definition.get_batch()
+    ```
+  </Tab>
+
+  <Tab title="SparkS3Datasource">
+    Use `add_spark_s3` to connect Spark to files in AWS S3. The Spark cluster must be configured with the appropriate AWS credentials and the `hadoop-aws` JAR.
+
+    ```python
+    datasource = context.data_sources.add_spark_s3(
+        name="spark_s3_datasource",
+        bucket="my-data-bucket",
+        boto3_options={},  # Optional boto3-style kwargs (e.g. region_name)
+    )
+    ```
+
+    **Example:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_spark_s3(
+        name="spark_s3_transactions",
+        bucket="my-data-bucket",
+    )
+
+    asset = datasource.add_parquet_asset(
+        name="monthly_snapshots",
+        batching_regex=re.compile(
+            r"snapshots/(?P<year>\d{4})/(?P<month>\d{2})/snapshot\.parquet"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_monthly(
+        name="monthly",
+        regex=r"snapshots/(?P<year>\d{4})/(?P<month>\d{2})/snapshot\.parquet",
+    )
+    ```
+
+    <Warning>
+      The Spark cluster must have the `hadoop-aws` library and compatible AWS SDK JAR on the classpath. Set `spark.hadoop.fs.s3a.access.key` and `spark.hadoop.fs.s3a.secret.key` (or use IAM roles) in your `spark_config`.
+    </Warning>
+  </Tab>
+
+  <Tab title="SparkGCSDatasource">
+    Use `add_spark_gcs` to connect Spark to files stored in Google Cloud Storage.
+
+    ```python
+    datasource = context.data_sources.add_spark_gcs(
+        name="spark_gcs_datasource",
+        bucket_or_name="my-gcs-bucket",
+        gcs_options={},  # Optional gcs kwargs (e.g. project)
+    )
+    ```
+
+    **Example:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_spark_gcs(
+        name="spark_gcs_transactions",
+        bucket_or_name="my-gcs-bucket",
+        gcs_options={"project": "my-gcp-project"},
+    )
+
+    asset = datasource.add_csv_asset(
+        name="daily_events",
+        batching_regex=re.compile(
+            r"events/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_daily(
+        name="daily",
+        regex=r"events/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.csv",
+    )
+    ```
+
+    <Note>
+      The Spark cluster must have the GCS connector JAR (`gcs-connector-hadoop3`) available and GCP credentials configured.
+    </Note>
+  </Tab>
+
+  <Tab title="SparkAzureBlobStorageDatasource">
+    Use `add_spark_abs` to connect Spark to files in Azure Blob Storage.
+
+    ```python
+    datasource = context.data_sources.add_spark_abs(
+        name="spark_azure_datasource",
+        azure_options={
+            "account_url": "https://<account>.blob.core.windows.net",
+            "credential": "<sas_token_or_account_key>",
+        },
+    )
+    ```
+
+    **Example:**
+
+    ```python
+    import re
+
+    datasource = context.data_sources.add_spark_abs(
+        name="spark_azure_transactions",
+        azure_options={
+            "account_url": "https://mystorageaccount.blob.core.windows.net",
+            "credential": "my-sas-token",
+        },
+    )
+
+    asset = datasource.add_parquet_asset(
+        name="daily_loads",
+        batching_regex=re.compile(
+            r"loads/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.parquet"
+        ),
+    )
+
+    batch_definition = asset.add_batch_definition_daily(
+        name="daily",
+        regex=r"loads/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\.parquet",
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## End-to-End Validation Workflow
+
+<Steps>
+  <Step title="Install dependencies and start a Spark session">
+    ```bash
+    pip install 'great_expectations[spark]'
+    ```
+
+    ```python
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder \
+        .appName("GX Validation") \
+        .getOrCreate()
+    ```
+  </Step>
+
+  <Step title="Create a Data Context and connect to data">
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+
+    datasource = context.data_sources.add_spark(name="spark_pipeline")
+    asset = datasource.add_dataframe_asset(name="orders")
+    batch_definition = asset.add_batch_definition_whole_dataframe(name="full")
+
+    df = spark.read.parquet("/data/orders/")
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    ```
+  </Step>
+
+  <Step title="Define Expectations">
+    ```python
+    suite = context.suites.add(gx.ExpectationSuite(name="orders_suite"))
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="order_id")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectTableRowCountToBeBetween(min_value=1000, max_value=1000000)
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="order_total", min_value=0.01, max_value=50000
+        )
+    )
+    ```
+  </Step>
+
+  <Step title="Run validation">
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="orders_validation",
+            data=batch_definition,
+            suite=suite,
+        )
+    )
+    results = validation_definition.run(batch_parameters={"dataframe": df})
+    print(results)
+    ```
+  </Step>
+</Steps>
+
+## Batch Definition Reference
+
+| Method | Asset types | Description |
+|--------|-------------|-------------|
+| `add_batch_definition_whole_dataframe(name)` | `DataFrameAsset` | Treats the entire DataFrame as one batch |
+| `add_batch_definition_path(name, path)` | File assets | Matches a single file by exact path |
+| `add_batch_definition_yearly(name, regex)` | File assets | One batch per year (requires `year` group) |
+| `add_batch_definition_monthly(name, regex)` | File assets | One batch per month (requires `year`, `month` groups) |
+| `add_batch_definition_daily(name, regex)` | File assets | One batch per day (requires `year`, `month`, `day` groups) |
+
+## Spark Session Configuration
+
+The `spark_config` parameter accepts a dictionary of Spark configuration key-value pairs. These are applied when GX creates or retrieves the `SparkSession`.
+
+```python
+datasource = context.data_sources.add_spark(
+    name="production_spark",
+    spark_config={
+        "spark.executor.memory": "8g",
+        "spark.executor.cores": "4",
+        "spark.sql.shuffle.partitions": "400",
+        "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+    },
+)
+```
+
+<Note>
+  The `force_reuse_spark_context` parameter is deprecated as of GX 1.0. GX now always attempts to reuse an existing `SparkSession`, applying `spark_config` settings where the session allows. If the existing session cannot be updated, GX will stop and restart it with the new configuration.
+</Note>

@@ -1,0 +1,268 @@
+---
+title: "Core concepts"
+description: "Understand the GX Core components and how they work together in a data validation workflow."
+---
+
+GX Core is built around a set of Python classes — called **components** — that map to the key entities in a data validation workflow. Understanding these components and how they connect to each other makes it straightforward to design and implement any GX workflow.
+
+## The GX workflow pattern
+
+Every GX Core workflow follows the same four-step pattern:
+
+<Steps>
+  <Step title="Set up">
+    Create a **Data Context** — the central object that manages your GX configuration, metadata, and results.
+  </Step>
+  <Step title="Connect">
+    Define a **Data Source**, **Data Asset**, and **Batch Definition** to tell GX where your data lives and how to retrieve a slice of it as a **Batch**.
+  </Step>
+  <Step title="Define">
+    Write **Expectations** and group them into **Expectation Suites** that describe what valid data looks like.
+  </Step>
+  <Step title="Validate">
+    Create a **Validation Definition** that links a Batch Definition to an Expectation Suite, then run it — directly, or via a **Checkpoint** — to produce **Validation Results**. Use **Actions** to act on those results and update **Data Docs**.
+  </Step>
+</Steps>
+
+## Components reference
+
+<AccordionGroup>
+  <Accordion title="Data Context" icon="server" defaultOpen={true}>
+    The Data Context is the entry point for all GX operations. It provides access to your GX configuration, manages the storage of metadata (Data Sources, Expectation Suites, Checkpoints), and gives you a Python interface to create, retrieve, and run GX components.
+
+    All GX scripts begin with creating a Data Context:
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context()
+    ```
+
+    GX Core provides three Data Context types:
+
+    | Type | Description | When to use |
+    |------|-------------|-------------|
+    | **File** (default) | Stores configuration and results as YAML files in a `gx/` directory. | Production workflows where you want persistent configuration. |
+    | **Ephemeral** | Stores everything in memory. Nothing persists after the session ends. | Exploratory work, notebooks, or environments without filesystem write access. |
+    | **Cloud** | Connects to GX Cloud for centralized team management of GX assets. | Teams that need a shared, managed GX environment. |
+
+    ```python
+    # File-based (default)
+    context = gx.get_context()
+
+    # Ephemeral
+    context = gx.get_context(mode="ephemeral")
+    ```
+
+    See [Create a Data Context](/setup/data-context) for full configuration details.
+  </Accordion>
+
+  <Accordion title="Data Source" icon="database">
+    A Data Source represents a connection to a data store — a Pandas environment, a filesystem, a SQL database, or cloud object storage. It tells GX how to connect to your data.
+
+    ```python
+    # Pandas Data Source
+    data_source = context.data_sources.add_pandas("my pandas source")
+
+    # Postgres Data Source
+    data_source = context.data_sources.add_postgres(
+        "my postgres source",
+        connection_string="postgresql+psycopg2://user:password@host/database"
+    )
+    ```
+
+    GX supports a range of integrations including Pandas, Spark, PostgreSQL, SQLite, Snowflake, BigQuery, and more. See [Connect to data](/connect/overview) for the full list.
+  </Accordion>
+
+  <Accordion title="Data Asset" icon="table">
+    A Data Asset is a named collection of records within a Data Source. If a Data Source is a database, a Data Asset is a table or the result of a query. If a Data Source is a filesystem, a Data Asset is a file or set of files.
+
+    ```python
+    # DataFrame asset from a Pandas Data Source
+    data_asset = data_source.add_dataframe_asset(name="my dataframe asset")
+
+    # Table asset from a SQL Data Source
+    data_asset = data_source.add_table_asset(
+        name="taxi data",
+        table_name="nyc_taxi_data"
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Batch Definition" icon="layers">
+    A Batch Definition describes how to split the records in a Data Asset into Batches for validation. A Data Asset can be validated as a single whole Batch, or partitioned into multiple Batches — for example, one Batch per day based on a date column.
+
+    ```python
+    # Validate the entire DataFrame as one Batch
+    batch_definition = data_asset.add_batch_definition_whole_dataframe("full batch")
+
+    # Validate an entire SQL table as one Batch
+    batch_definition = data_asset.add_batch_definition_whole_table("full table batch")
+    ```
+
+    The Batch Definition is the object you reference when creating a Validation Definition. It tells GX which data to retrieve at validation time.
+  </Accordion>
+
+  <Accordion title="Batch" icon="copy">
+    A Batch is the actual slice of data retrieved from a Data Asset using a Batch Definition. It is the unit of data that GX validates against Expectations.
+
+    ```python
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    ```
+
+    You can validate a Batch directly against a single Expectation for exploratory work:
+
+    ```python
+    expectation = gx.expectations.ExpectColumnValuesToBeBetween(
+        column="passenger_count", min_value=1, max_value=6
+    )
+    validation_result = batch.validate(expectation)
+    ```
+  </Accordion>
+
+  <Accordion title="Expectation" icon="check-circle">
+    An Expectation is a verifiable assertion about data. It is expressed as a Python class that captures the constraint you want to enforce — the column to check, the condition, and the expected values.
+
+    ```python
+    # Column values must not be null
+    gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+
+    # Column values must fall within a range
+    gx.expectations.ExpectColumnValuesToBeBetween(
+        column="passenger_count", min_value=1, max_value=6
+    )
+
+    # Column values must be unique
+    gx.expectations.ExpectColumnValuesToBeUnique(column="trip_id")
+    ```
+
+    Expectations can have a `severity` of `"warning"` or `"critical"` to indicate the impact of a failure on downstream systems.
+
+    GX ships with hundreds of built-in Expectations. Browse the full list at the [Expectations Gallery](https://greatexpectations.io/expectations/).
+  </Accordion>
+
+  <Accordion title="Expectation Suite" icon="list-checks">
+    An Expectation Suite is a named, ordered collection of Expectations. Suites let you group related Expectations together and apply them to a Batch as a unit.
+
+    ```python
+    suite = context.suites.add(
+        gx.ExpectationSuite(name="taxi data quality suite")
+    )
+
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="fare_amount", min_value=0
+        )
+    )
+    ```
+
+    You can define multiple Expectation Suites for the same dataset — for example, one suite for schema validation and another for value range checks. You can also apply the same suite to different Batches.
+
+    See [Expectation Suites](/expectations/expectation-suites) for more.
+  </Accordion>
+
+  <Accordion title="Validation Definition" icon="link">
+    A Validation Definition explicitly links a Batch Definition to an Expectation Suite. It answers the question: "which data should be validated against which Expectations?"
+
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="taxi nightly validation",
+            data=batch_definition,
+            suite=suite,
+        )
+    )
+
+    result = validation_definition.run(batch_parameters={"dataframe": df})
+    ```
+
+    Running a Validation Definition returns a Validation Result — a structured object that records whether each Expectation passed or failed, along with counts and sample values for any failures.
+
+    See [Validation Definitions](/validate/validation-definitions) for more.
+  </Accordion>
+
+  <Accordion title="Checkpoint" icon="flag-checkered">
+    A Checkpoint is the primary mechanism for running data validation in production. It holds a list of Validation Definitions and runs them together with shared parameters.
+
+    ```python
+    checkpoint = context.checkpoints.add(
+        gx.Checkpoint(
+            name="nightly checkpoint",
+            validation_definitions=[validation_definition],
+        )
+    )
+
+    checkpoint_result = checkpoint.run()
+    print(checkpoint_result.describe())
+    ```
+
+    Checkpoints can be configured with Actions that automatically process the Checkpoint result — for example, sending an alert when validation fails or updating a Data Docs site.
+
+    See [Checkpoints](/validate/checkpoints) for more.
+  </Accordion>
+
+  <Accordion title="Actions" icon="bolt">
+    Actions are post-validation hooks that a Checkpoint triggers after running its Validation Definitions. They give you a way to integrate GX results into your broader data infrastructure.
+
+    Common Actions include:
+
+    - **Slack notification** — Send a message to a Slack channel with a summary of the Checkpoint result.
+    - **Email alert** — Send an email when one or more Validations fail.
+    - **Microsoft Teams notification** — Post results to a Teams channel.
+    - **Data Docs update** — Write the Validation Results to a Data Docs site.
+    - **Custom Action** — Implement your own `ValidationAction` subclass to handle results in any way.
+
+    See [Actions](/validate/actions) for configuration examples.
+  </Accordion>
+
+  <Accordion title="Data Docs" icon="file-text">
+    Data Docs are human-readable HTML documentation generated automatically by GX. They render your Expectation Suite definitions and Validation Results in a format that is easy to share with data consumers, analysts, and stakeholders.
+
+    Data Docs can be hosted locally, on a shared filesystem, or in cloud object storage (S3, GCS, Azure Blob Storage). They update automatically when you run a Checkpoint with a Data Docs Action configured.
+
+    Data Docs provide a persistent, auditable record of your data quality history — useful for compliance reporting and cross-team communication.
+
+    See [Data Docs](/validate/data-docs) for setup instructions.
+  </Accordion>
+</AccordionGroup>
+
+## Component relationships
+
+The diagram below summarizes how the components connect in a typical GX workflow:
+
+```
+Data Context
+  └── Data Source
+        └── Data Asset
+              └── Batch Definition ──► Batch (at runtime)
+                                          │
+Expectation Suite                         │
+  └── Expectations                        │
+        │                                 │
+        └────────► Validation Definition ─┘
+                          │
+                          ▼
+                    Checkpoint
+                      └── Actions
+                            └── Data Docs
+```
+
+## Explore by component
+
+<CardGroup cols={2}>
+  <Card title="Connect to data" icon="database" href="/connect/overview">
+    Set up Data Sources and Data Assets for Pandas, SQL, and cloud storage.
+  </Card>
+  <Card title="Define Expectations" icon="check-circle" href="/expectations/overview">
+    Write Expectations and organize them into Expectation Suites.
+  </Card>
+  <Card title="Run validations" icon="play" href="/validate/run-validations">
+    Create Validation Definitions and run them to produce results.
+  </Card>
+  <Card title="Checkpoints and Actions" icon="bolt" href="/validate/checkpoints">
+    Automate validation and trigger alerts in production workflows.
+  </Card>
+</CardGroup>

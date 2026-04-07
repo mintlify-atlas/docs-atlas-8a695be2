@@ -1,0 +1,113 @@
+---
+title: "Connect to Data Overview"
+description: "Introduction to GX Core data sources, assets, and batches. Learn how the three-layer model organizes your data for validation."
+keywords: ["great expectations", "data source", "data asset", "batch", "connect"]
+---
+
+Great Expectations (GX) Core uses a layered model to connect to data. Before you can define expectations or run validations, you configure how GX reaches your data and how it selects records from it.
+
+## The three-layer model
+
+Every data connection in GX Core follows the same hierarchy:
+
+```
+Data Source → Data Asset → Batch Definition → Batch
+```
+
+### Data Source
+
+A **Data Source** tells GX where your data lives and how to connect to it. It encapsulates the connection details — a filesystem path, a database connection string, or cloud storage credentials. You create one Data Source per storage location.
+
+```python
+data_source = context.data_sources.add_pandas_filesystem(
+    name="my_filesystem_source",
+    base_directory="./data"
+)
+```
+
+### Data Asset
+
+A **Data Asset** represents a logical grouping of records within a Data Source — a specific table, a set of CSV files, or an in-memory dataframe. Data Assets also serve as the organizational unit for Validation Results: results from validating the same Data Asset are grouped together.
+
+```python
+data_asset = data_source.add_csv_asset(name="taxi_csv_files")
+```
+
+### Batch Definition
+
+A **Batch Definition** specifies how records are selected from a Data Asset when GX retrieves data for validation. For a SQL table you might return the whole table, or partition by a date column. For files you can match filenames with a regex. For dataframes the entire frame is always returned.
+
+```python
+batch_definition = data_asset.add_batch_definition_monthly(
+    name="monthly_batches",
+    regex=r"yellow_tripdata_(?P<year>\d{4})-(?P<month>\d{2})\.csv"
+)
+```
+
+### Batch
+
+A **Batch** is the actual slice of data returned at runtime. You retrieve a Batch from a Batch Definition to validate it directly or pass it to a Validation Definition.
+
+```python
+batch = batch_definition.get_batch(batch_parameters={"year": "2024", "month": "01"})
+```
+
+<Note>
+A single Data Source can have many Data Assets, and each Data Asset can have many Batch Definitions. This lets you model complex data pipelines with fine-grained control over which records are validated.
+</Note>
+
+## Supported data sources
+
+<CardGroup cols={2}>
+  <Card
+    title="Pandas DataFrames"
+    icon="table"
+    href="/connect/pandas-dataframes"
+  >
+    Connect to in-memory pandas or Spark DataFrames. Pass a dataframe at runtime via batch parameters.
+  </Card>
+  <Card
+    title="Filesystem Data"
+    icon="folder"
+    href="/connect/filesystem-data"
+  >
+    Connect to CSV, Parquet, JSON, and other files stored in a local or networked folder hierarchy.
+  </Card>
+  <Card
+    title="SQL Databases"
+    icon="database"
+    href="/connect/sql-databases"
+  >
+    Connect to PostgreSQL, Snowflake, SQLite, Redshift, BigQuery, Databricks, and other SQL databases.
+  </Card>
+  <Card
+    title="Cloud Storage"
+    icon="cloud"
+    href="/connect/cloud-storage"
+  >
+    Connect to data files stored in AWS S3, Azure Blob Storage, or Google Cloud Storage.
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+All connection workflows require:
+
+- Python 3.10 or later
+- GX Core installed (`pip install great_expectations`)
+- A Data Context (`context = gx.get_context()`)
+
+Some connection types require additional dependencies. Install them alongside GX Core:
+
+| Data source | Extra dependency |
+|---|---|
+| PostgreSQL | `great_expectations[postgresql]` |
+| Snowflake | `great_expectations[snowflake]` |
+| Redshift | `great_expectations[redshift]` |
+| Databricks SQL | `great_expectations[databricks]` |
+| BigQuery | `great_expectations[bigquery]` |
+| Microsoft SQL Server | `great_expectations[sql-server]` |
+| AWS S3 | `great_expectations[s3]` |
+| Azure Blob Storage | `great_expectations[azure]` |
+| Google Cloud Storage | `great_expectations[bigquery]` |
+| Spark | `great_expectations[spark]` |

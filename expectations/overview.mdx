@@ -1,0 +1,176 @@
+---
+title: "Expectations overview"
+description: "What Expectations are and the full catalog of built-in types available in GX Core."
+keywords: ["great expectations", "expectations", "data quality", "data validation", "expectation catalog"]
+---
+
+An Expectation is a verifiable assertion about your data. Expectations make implicit assumptions about your data explicit, and they provide a flexible, declarative language for describing expected behavior. They can help you better understand your data and systematically improve data quality.
+
+When you run an Expectation against a Batch of data, GX evaluates whether the data satisfies the assertion and returns a structured `ExpectationValidationResult` that includes a `success` flag, observed values, and metadata about which rows failed.
+
+All built-in Expectations are available from the `great_expectations.expectations` module:
+
+```python
+import great_expectations as gx
+
+# Access any built-in Expectation class
+expectation = gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+```
+
+## Common parameters
+
+Every Expectation supports these optional parameters in addition to its own required arguments:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mostly` | `float` (0–1) | Fuzzy threshold. The Expectation succeeds if at least this fraction of rows pass. Default is `1` (all rows must pass). |
+| `meta` | `dict` | A JSON-serializable dictionary for storing user-supplied notes or metadata alongside the Expectation. |
+| `severity` | `str` | One of `"critical"`, `"warning"`, or `"info"`. Indicates the impact of failure. Defaults to `"critical"`. |
+| `result_format` | `str` | Controls the verbosity of validation output: `BOOLEAN_ONLY`, `BASIC`, `SUMMARY`, or `COMPLETE`. |
+
+<Note>
+If an Expectation fails to execute at all (for example, due to a missing column or runtime error), it is always recorded as `critical` regardless of the configured `severity`, so that execution failures are never silently ignored.
+</Note>
+
+## Built-in Expectation catalog
+
+GX Core ships with dozens of built-in Expectations organized by the type of data quality check they address.
+
+<AccordionGroup>
+
+<Accordion title="Table expectations">
+
+These Expectations evaluate properties of the entire table rather than individual columns.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectTableRowCountToBeBetween` | The number of rows must fall between `min_value` and `max_value` (inclusive). |
+| `ExpectTableRowCountToEqual` | The number of rows must equal an exact value. |
+| `ExpectTableRowCountToEqualOtherTable` | The row count must match the row count of another table. |
+| `ExpectTableColumnCountToBeBetween` | The number of columns must fall between `min_value` and `max_value`. |
+| `ExpectTableColumnsToMatchOrderedList` | The columns must match a given ordered list exactly. |
+| `ExpectTableColumnsToMatchSet` | The columns must match a set of expected column names (order-independent). |
+
+</Accordion>
+
+<Accordion title="Column existence and schema">
+
+These Expectations check that columns exist and contain values of the correct type.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnToExist` | The specified column must be present in the table. Optionally checks the column's zero-indexed position. |
+| `ExpectColumnValuesToBeOfType` | Each value in the column must be of the specified type. |
+| `ExpectColumnValuesToBeInTypeList` | Each value in the column must be one of the types in a given list. |
+
+</Accordion>
+
+<Accordion title="Column value presence">
+
+These Expectations check for null and non-null values in a column.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnValuesToNotBeNull` | Column values must not be null. Explicit nulls and `np.NaN` count; empty strings do not unless coerced to null. Supports `mostly`. |
+| `ExpectColumnValuesToBeNull` | Column values must be null. Supports `mostly`. |
+| `ExpectColumnProportionOfNonNullValuesToBeBetween` | The proportion of non-null values must fall between `min_value` and `max_value`. |
+
+</Accordion>
+
+<Accordion title="Column value sets">
+
+These Expectations validate that column values belong to (or are excluded from) a defined set.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnValuesToBeInSet` | Each value must belong to a given set. Supports `mostly`. |
+| `ExpectColumnValuesToNotBeInSet` | No value may appear in the specified set. Supports `mostly`. |
+| `ExpectColumnDistinctValuesToBeInSet` | The set of distinct values must be a subset of the expected set. |
+| `ExpectColumnDistinctValuesToContainSet` | The set of distinct values must contain all values in the expected set. |
+| `ExpectColumnDistinctValuesToEqualSet` | The set of distinct values must exactly match the expected set. |
+| `ExpectColumnMostCommonValueToBeInSet` | The most frequently occurring value(s) must appear in the given set. |
+
+</Accordion>
+
+<Accordion title="Column value ranges">
+
+These Expectations check that values or string lengths fall within defined bounds.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnValuesToBeBetween` | Each value must be between `min_value` and `max_value`. Supports `strict_min`, `strict_max`, and `mostly`. |
+| `ExpectColumnValueLengthsToBeBetween` | The length of each string value must fall between `min_value` and `max_value`. |
+| `ExpectColumnValueLengthsToEqual` | The length of each string value must equal an exact value. |
+
+</Accordion>
+
+<Accordion title="Column aggregates">
+
+These Expectations check computed aggregate statistics for a column.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnMeanToBeBetween` | The column mean must fall between `min_value` and `max_value`. |
+| `ExpectColumnMedianToBeBetween` | The column median must fall between `min_value` and `max_value`. |
+| `ExpectColumnStdevToBeBetween` | The column standard deviation must fall between `min_value` and `max_value`. |
+| `ExpectColumnSumToBeBetween` | The column sum must fall between `min_value` and `max_value`. |
+| `ExpectColumnMinToBeBetween` | The column minimum value must fall between `min_value` and `max_value`. |
+| `ExpectColumnMaxToBeBetween` | The column maximum value must fall between `min_value` and `max_value`. |
+| `ExpectColumnQuantileValuesToBeBetween` | Specified quantiles of the column must fall within defined bounds. |
+
+</Accordion>
+
+<Accordion title="Column string and regex">
+
+These Expectations validate that string values match specific patterns or formats.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnValuesToMatchRegex` | Each value must match the specified regular expression. Supports `mostly`. |
+| `ExpectColumnValuesToNotMatchRegex` | No value may match the specified regular expression. Supports `mostly`. |
+| `ExpectColumnValuesToMatchLikePattern` | Each value must match a SQL `LIKE` pattern. Supports `mostly`. |
+| `ExpectColumnValuesToMatchStrftimeFormat` | Each value must be parseable as a date/time using the specified `strftime` format. Supports `mostly`. |
+
+</Accordion>
+
+<Accordion title="Column uniqueness">
+
+These Expectations check uniqueness properties within a column.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectColumnValuesToBeUnique` | Each value in the column must be unique. Supports `mostly`. |
+| `ExpectColumnUniqueValueCountToBeBetween` | The number of unique values must fall between `min_value` and `max_value`. |
+| `ExpectColumnProportionOfUniqueValuesToBeBetween` | The proportion of unique values must fall between `min_value` and `max_value`. |
+
+</Accordion>
+
+<Accordion title="Multi-column">
+
+These Expectations validate relationships across two or more columns.
+
+| Expectation | Description |
+|-------------|-------------|
+| `ExpectCompoundColumnsToBeUnique` | The combination of values across a set of columns must be unique for every row. |
+| `ExpectMulticolumnValuesToBeUnique` | Values must be unique across multiple specified columns. |
+| `ExpectMulticolumnSumToEqual` | The sum of values across a set of columns must equal a specific value for every row. |
+| `ExpectColumnPairValuesAToBeGreaterThanB` | Values in column A must be greater than values in column B for every row. |
+| `ExpectSelectColumnValuesToBeUniqueWithinRecord` | Selected column values must be unique within each individual row. |
+
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Create Expectations" icon="plus" href="/expectations/create-expectations">
+    Instantiate and configure individual Expectations with real parameters.
+  </Card>
+  <Card title="Expectation Suites" icon="layer-group" href="/expectations/expectation-suites">
+    Organize multiple Expectations into a Suite for batch validation.
+  </Card>
+  <Card title="Custom Expectations" icon="code" href="/expectations/custom-expectations">
+    Define your own data quality rules by subclassing built-in types.
+  </Card>
+</CardGroup>

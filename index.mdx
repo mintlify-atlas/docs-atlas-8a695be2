@@ -1,97 +1,107 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Great Expectations"
+description: "Always know what to expect from your data. GX Core is an open-source Python library for defining, testing, and validating data quality in any data pipeline."
 ---
 
-## Setting up
+GX Core gives data teams a common language for describing data quality. Write expressive, reusable **Expectations** — unit tests for your data — and run them against any data source to get instant validation results and auto-generated documentation.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get from installation to your first validation in under 5 minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Core Concepts" icon="lightbulb" href="/core-concepts">
+    Understand the building blocks: Data Sources, Expectations, Checkpoints, and more.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Connect to Data" icon="database" href="/connect/overview">
+    Connect to Pandas, Spark, PostgreSQL, Snowflake, S3, and many more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/reference/get-context">
+    Explore the full public API surface for GX Core.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How GX Core works
 
-Everything you need to create world-class documentation.
+All GX workflows follow a simple four-step pattern:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Set up your environment">
+    Install GX Core and create a **Data Context** — the central object that manages all your GX configuration, metadata, and results.
 
-## Need inspiration?
+    ```bash
+    pip install great_expectations
+    ```
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    ```python
+    import great_expectations as gx
+    context = gx.get_context()
+    ```
+  </Step>
+  <Step title="Connect to your data">
+    Add a **Data Source** pointing to your data store, define a **Data Asset** (a table, file, or query result), and create a **Batch Definition** to control how records are retrieved for validation.
+
+    ```python
+    data_source = context.data_sources.add_pandas_filesystem(
+        name="my_data_source",
+        base_directory="./data",
+    )
+    data_asset = data_source.add_csv_asset(name="yellow_tripdata")
+    batch_definition = data_asset.add_batch_definition_whole_dataframe(
+        "all_records"
+    )
+    ```
+  </Step>
+  <Step title="Define Expectations">
+    Create an **Expectation Suite** and add **Expectations** — verifiable assertions about your data — to describe what you expect.
+
+    ```python
+    suite = context.suites.add(gx.ExpectationSuite(name="my_suite"))
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="passenger_count")
+    )
+    suite.add_expectation(
+        gx.expectations.ExpectColumnValuesToBeBetween(
+            column="trip_distance", min_value=0, max_value=1000
+        )
+    )
+    ```
+  </Step>
+  <Step title="Run Validations">
+    Create a **Validation Definition** linking your data to your suite, then run it to get a **Validation Result**. Use a **Checkpoint** to automate this in production.
+
+    ```python
+    validation_definition = context.validation_definitions.add(
+        gx.ValidationDefinition(
+            name="my_validation",
+            data=batch_definition,
+            suite=suite,
+        )
+    )
+    results = validation_definition.run()
+    print(results)
+    ```
+  </Step>
+</Steps>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="50+ built-in Expectations" icon="check-double" href="/expectations/overview">
+    Column value checks, statistical tests, schema validation, and more — all ready to use.
+  </Card>
+  <Card title="Custom Expectations" icon="puzzle-piece" href="/expectations/custom-expectations">
+    Extend GX with your own domain-specific data quality rules using Python subclasses or SQL.
+  </Card>
+  <Card title="Checkpoints & Actions" icon="bolt" href="/validate/checkpoints">
+    Automate validations in production and trigger Slack, email, or custom alerts on results.
+  </Card>
+  <Card title="Data Docs" icon="file-lines" href="/validate/data-docs">
+    Auto-generate human-readable HTML reports of your Expectations and Validation Results.
+  </Card>
+  <Card title="Wide data source support" icon="plug" href="/connect/overview">
+    Works with Pandas, Spark, PostgreSQL, Snowflake, BigQuery, Redshift, S3, Azure, GCS, and more.
+  </Card>
+  <Card title="Pipeline-ready" icon="arrows-rotate" href="/validate/checkpoints">
+    Integrates with Airflow, Prefect, dbt, Databricks, and any Python-based orchestration tool.
+  </Card>
+</CardGroup>

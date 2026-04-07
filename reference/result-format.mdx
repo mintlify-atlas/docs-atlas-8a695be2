@@ -1,0 +1,191 @@
+---
+title: "ResultFormat"
+description: "Controls the verbosity of validation results returned by ValidationDefinition.run() and Checkpoint.run(). Choose between four levels of detail."
+---
+
+`ResultFormat` is an enum that controls how much diagnostic information is included in validation results. A more verbose format gives you more detail about what failed and why, at the cost of larger result objects.
+
+```python
+import great_expectations as gx
+
+# Use on ValidationDefinition
+result = validation_definition.run(result_format=gx.ResultFormat.COMPLETE)
+
+# Use on Checkpoint
+checkpoint = gx.Checkpoint(
+    name="my_checkpoint",
+    validation_definitions=[validation_def],
+    result_format=gx.ResultFormat.SUMMARY,
+)
+```
+
+The default format is `ResultFormat.SUMMARY`.
+
+## Available formats
+
+<AccordionGroup>
+  <Accordion title="ResultFormat.BOOLEAN_ONLY — pass/fail only">
+    Returns the minimum possible result: a single boolean indicating whether the expectation passed or failed. No counts, no unexpected values, no statistics.
+
+    Use `BOOLEAN_ONLY` when:
+    - You only need to know whether validation succeeded, not why it failed
+    - You are optimizing for performance and want to minimize result payload size
+    - You are triggering downstream logic based solely on pass/fail
+
+    ```python
+    result = validation_definition.run(
+        result_format=gx.ResultFormat.BOOLEAN_ONLY
+    )
+    ```
+
+    Result dict for a single expectation:
+
+    ```json
+    {
+        "success": false
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="ResultFormat.BASIC — pass/fail with aggregate statistics">
+    Returns pass/fail results plus basic statistics: element count, unexpected count, and unexpected percent. Does not include sample unexpected values.
+
+    Use `BASIC` when:
+    - You need to know the scale of failures (how many rows failed?) but not the specific values
+    - You want lightweight results suitable for alerting without large payloads
+
+    ```python
+    result = validation_definition.run(
+        result_format=gx.ResultFormat.BASIC
+    )
+    ```
+
+    Result dict for a single expectation:
+
+    ```json
+    {
+        "success": false,
+        "result": {
+            "element_count": 10000,
+            "unexpected_count": 42,
+            "unexpected_percent": 0.42,
+            "partial_unexpected_list": []
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="ResultFormat.SUMMARY — statistics with sample unexpected values (default)">
+    Returns pass/fail, aggregate statistics, and a sample of unexpected values (up to 20 by default). This is the default format for both `ValidationDefinition.run()` and `Checkpoint`.
+
+    Use `SUMMARY` when:
+    - You want to understand both the scale of failures and see representative examples of what failed
+    - Building Data Docs or dashboards that need enough context to be actionable
+    - This is the right default for most production workflows
+
+    ```python
+    result = validation_definition.run(
+        result_format=gx.ResultFormat.SUMMARY
+    )
+    ```
+
+    Result dict for a single expectation:
+
+    ```json
+    {
+        "success": false,
+        "result": {
+            "element_count": 10000,
+            "unexpected_count": 42,
+            "unexpected_percent": 0.42,
+            "partial_unexpected_list": [null, null, -1, null],
+            "partial_unexpected_counts": [
+                {"value": null, "count": 39},
+                {"value": -1, "count": 3}
+            ]
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="ResultFormat.COMPLETE — full list of all unexpected values">
+    Returns pass/fail, aggregate statistics, and the complete list of all unexpected values or unexpected rows (not just a sample). For large datasets, this result can be very large.
+
+    Use `COMPLETE` when:
+    - You need to identify and act on every single failing row, not just a sample
+    - Running validations on smaller datasets where the full list is manageable
+    - Doing exploratory data quality analysis
+
+    ```python
+    result = validation_definition.run(
+        result_format=gx.ResultFormat.COMPLETE
+    )
+    ```
+
+    Result dict for a single expectation:
+
+    ```json
+    {
+        "success": false,
+        "result": {
+            "element_count": 10000,
+            "unexpected_count": 42,
+            "unexpected_percent": 0.42,
+            "unexpected_list": [null, null, -1, null, null, ...],
+            "unexpected_index_list": [23, 105, 312, 489, ...]
+        }
+    }
+    ```
+
+    <Warning>
+      For large datasets, `COMPLETE` can produce very large result objects. Consider using `SUMMARY` in production and using `COMPLETE` only when you specifically need all failing rows.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Format comparison
+
+| Format | `success` | Counts & % | Sample unexpected | All unexpected values |
+|--------|-----------|------------|-------------------|----------------------|
+| `BOOLEAN_ONLY` | Yes | No | No | No |
+| `BASIC` | Yes | Yes | No | No |
+| `SUMMARY` (default) | Yes | Yes | Yes (up to 20) | No |
+| `COMPLETE` | Yes | Yes | Yes | Yes (all rows) |
+
+## Setting result_format
+
+### On ValidationDefinition.run()
+
+Pass `result_format` as a keyword argument to override the default for a single run:
+
+```python
+import great_expectations as gx
+
+result = validation_definition.run(
+    result_format=gx.ResultFormat.COMPLETE,
+)
+```
+
+### On Checkpoint
+
+Set `result_format` on the `Checkpoint` constructor to apply it to all validation definitions in the checkpoint:
+
+```python
+import great_expectations as gx
+
+checkpoint = gx.Checkpoint(
+    name="detailed_checkpoint",
+    validation_definitions=[validation_def],
+    result_format=gx.ResultFormat.COMPLETE,
+)
+```
+
+You can also pass a string literal instead of the enum value:
+
+```python
+checkpoint = gx.Checkpoint(
+    name="my_checkpoint",
+    validation_definitions=[validation_def],
+    result_format="SUMMARY",
+)
+```

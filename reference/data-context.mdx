@@ -1,0 +1,214 @@
+---
+title: "DataContext"
+description: "The central object for managing GX workflows. Provides access to data sources, expectation suites, validation definitions, and checkpoints."
+---
+
+A `DataContext` is the hub of every GX project. It manages the lifecycle of all GX objects and provides access to the collections you use to build, run, and store validations.
+
+You obtain a context by calling [`gx.get_context()`](/reference/get-context). The concrete type (`EphemeralDataContext`, `FileDataContext`, or `CloudDataContext`) depends on your environment and parameters, but all three share the same interface described here.
+
+```python
+import great_expectations as gx
+
+context = gx.get_context(mode="file")
+```
+
+## Collections
+
+The context exposes four managed collections. Each collection supports `add`, `get`, `all`, `delete`, and `add_or_update` operations.
+
+<AccordionGroup>
+  <Accordion title="context.data_sources — manage Data Sources">
+    `context.data_sources` is a `DataSourceManager` that provides access to all configured data sources.
+
+    Data sources are the connection layer between GX and your data. Each data source can contain multiple data assets, and each asset can have multiple batch definitions.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="file")
+
+    # Add a pandas data source
+    data_source = context.data_sources.add_pandas(name="my_pandas_source")
+
+    # Retrieve an existing data source by name
+    data_source = context.data_sources.get("my_pandas_source")
+
+    # List all data sources
+    all_sources = context.data_sources.all()
+
+    # Delete a data source by name
+    context.data_sources.delete("my_pandas_source")
+    ```
+
+    <Note>
+      Data sources also support type-specific `add_*` methods such as `add_pandas()`, `add_spark()`, and `add_sql()`. Refer to the data source documentation for connector-specific parameters.
+    </Note>
+  </Accordion>
+
+  <Accordion title="context.suites — manage Expectation Suites">
+    `context.suites` is a `SuiteFactory` that manages the `ExpectationSuite` objects stored in this context.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="file")
+
+    # Create and persist a new suite
+    suite = gx.ExpectationSuite(name="my_suite")
+    suite = context.suites.add(suite)
+
+    # Retrieve an existing suite by name
+    suite = context.suites.get("my_suite")
+
+    # List all suites
+    all_suites = list(context.suites.all())
+
+    # Add a suite if it doesn't exist, or update it if it does
+    suite = context.suites.add_or_update(suite)
+
+    # Delete a suite by name
+    context.suites.delete("my_suite")
+    ```
+
+    See [ExpectationSuite](/reference/expectation-suite) for details on working with suite objects directly.
+  </Accordion>
+
+  <Accordion title="context.validation_definitions — manage Validation Definitions">
+    `context.validation_definitions` is a `ValidationDefinitionFactory` that manages `ValidationDefinition` objects. Each validation definition pairs a batch definition with an expectation suite.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="file")
+
+    # Assumes a suite and batch_definition already exist
+    validation_def = gx.ValidationDefinition(
+        name="my_validation",
+        data=batch_definition,
+        suite=suite,
+    )
+
+    # Persist the validation definition
+    validation_def = context.validation_definitions.add(validation_def)
+
+    # Retrieve by name
+    validation_def = context.validation_definitions.get("my_validation")
+
+    # List all validation definitions
+    all_defs = list(context.validation_definitions.all())
+
+    # Add or update
+    validation_def = context.validation_definitions.add_or_update(validation_def)
+
+    # Delete by name
+    context.validation_definitions.delete("my_validation")
+    ```
+
+    See [ValidationDefinition](/reference/validation-definition) for details on running validations and interpreting results.
+  </Accordion>
+
+  <Accordion title="context.checkpoints — manage Checkpoints">
+    `context.checkpoints` is a `CheckpointFactory` that manages `Checkpoint` objects. Checkpoints group multiple validation definitions and can trigger post-validation actions such as updating Data Docs or sending notifications.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="file")
+
+    # Assumes validation_definitions already exist
+    checkpoint = gx.Checkpoint(
+        name="my_checkpoint",
+        validation_definitions=[validation_def],
+    )
+
+    # Persist the checkpoint
+    checkpoint = context.checkpoints.add(checkpoint)
+
+    # Retrieve by name
+    checkpoint = context.checkpoints.get("my_checkpoint")
+
+    # List all checkpoints
+    all_checkpoints = list(context.checkpoints.all())
+
+    # Add or update
+    checkpoint = context.checkpoints.add_or_update(checkpoint)
+
+    # Delete by name
+    context.checkpoints.delete("my_checkpoint")
+    ```
+
+    See [Checkpoint](/reference/checkpoint) for details on running checkpoints and using actions.
+  </Accordion>
+</AccordionGroup>
+
+## Methods
+
+### build_data_docs()
+
+Builds HTML Data Docs for your project from stored validation results and expectation suites.
+
+```python
+context.build_data_docs()
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `site_names` | `list[str] \| None` | `None` | Build only the listed sites. If `None`, builds all configured sites. |
+| `resource_identifiers` | `list \| None` | `None` | Rebuild only for specific resources. Enables incremental builds. |
+| `dry_run` | `bool` | `False` | When `True`, returns site URLs without building. |
+| `build_index` | `bool` | `True` | When `False`, skips building the index page. |
+
+**Returns:** `dict[str, str]` — A dictionary mapping site names to the file path of their `index.html`.
+
+### open_data_docs()
+
+Opens the built Data Docs in your default web browser.
+
+```python
+context.open_data_docs()
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `resource_identifier` | `str \| None` | `None` | Open the docs page for a specific resource. If `None`, opens the index. |
+| `site_name` | `str \| None` | `None` | Open a specific site. If `None`, opens all configured sites. |
+| `only_if_exists` | `bool` | `True` | Only open sites that have already been built. |
+
+```python
+# Build and open docs
+context.build_data_docs()
+context.open_data_docs()
+```
+
+### convert_to_file_context()
+
+Available on `EphemeralDataContext` only. Converts the in-memory context into a file-backed `FileDataContext` by scaffolding a GX project directory in the current working directory.
+
+```python
+import great_expectations as gx
+
+# Start ephemeral, then promote to file-backed
+ephemeral_context = gx.get_context(mode="ephemeral")
+
+# ... configure data sources, suites, etc. ...
+
+file_context = ephemeral_context.convert_to_file_context()
+```
+
+<Note>
+  `convert_to_file_context()` writes the GX project to the current working directory. The returned `FileDataContext` replaces the ephemeral context — use the returned value going forward.
+</Note>
+
+## Context modes summary
+
+| Feature | `EphemeralDataContext` | `FileDataContext` | `CloudDataContext` |
+|---------|----------------------|-------------------|-------------------|
+| Persists between runs | No | Yes (filesystem) | Yes (Cloud API) |
+| Requires cloud credentials | No | No | Yes |
+| `convert_to_file_context()` | Yes | No | No |
+| Data Docs | In-memory only | Local HTML files | GX Cloud UI |

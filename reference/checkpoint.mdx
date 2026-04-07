@@ -1,0 +1,196 @@
+---
+title: "Checkpoint"
+description: "Run multiple ValidationDefinitions together with shared configuration and post-validation actions. The primary mechanism for production data quality monitoring."
+---
+
+A `Checkpoint` is the primary means of running data validation in a production GX deployment. It groups multiple [`ValidationDefinition`](/reference/validation-definition) objects, runs them together, and then executes a list of actions (such as updating Data Docs or sending notifications) based on the results.
+
+## Constructor
+
+```python
+import great_expectations as gx
+
+checkpoint = gx.Checkpoint(
+    name="my_checkpoint",
+    validation_definitions=[validation_def_1, validation_def_2],
+    actions=[update_docs_action],
+    result_format=gx.ResultFormat.SUMMARY,
+)
+```
+
+<ParamField path="name" type="str" required>
+  A unique name for the checkpoint. Used to retrieve it from the context store.
+</ParamField>
+
+<ParamField path="validation_definitions" type="list[ValidationDefinition]" required>
+  One or more `ValidationDefinition` objects to run when the checkpoint is executed. All validation definitions must be persisted in the context store before the checkpoint can be run.
+</ParamField>
+
+<ParamField path="actions" type="list[ValidationAction]" default="[]">
+  A list of actions to execute after all validation definitions have been run. Actions receive the full `CheckpointResult` and can update Data Docs, send Slack notifications, or trigger other workflows. See the actions section below for common action types.
+</ParamField>
+
+<ParamField path="result_format" type="ResultFormat | str" default="ResultFormat.SUMMARY">
+  Controls how much detail is included in the validation results passed to actions and returned by `run()`. See [ResultFormat](/reference/result-format) for all options. This setting applies to all validation definitions in the checkpoint.
+</ParamField>
+
+<ParamField path="id" type="str | None" default="None">
+  Assigned automatically when the checkpoint is persisted via `context.checkpoints.add()`. Do not set this manually.
+</ParamField>
+
+## run()
+
+Runs all validation definitions in the checkpoint and then executes each action with the combined results.
+
+```python
+result = checkpoint.run(
+    batch_parameters={"year": 2024, "month": 1},
+)
+```
+
+<ParamField path="batch_parameters" type="dict | None" default="None">
+  A dictionary of parameters forwarded to all validation definitions in the checkpoint. Use this to select a specific batch across all validations (for example, `{"year": 2024, "month": 1}`). Validations that do not use a given key will ignore it.
+</ParamField>
+
+<ParamField path="expectation_parameters" type="dict | None" default="None">
+  Runtime values for parameterized expectations using the `$PARAMETER` syntax. Applied to all validation definitions in the checkpoint.
+</ParamField>
+
+<ParamField path="run_id" type="RunIdentifier | None" default="None">
+  An optional identifier for the run. When `None`, a `RunIdentifier` is generated automatically. Leave this as `None` in most cases.
+</ParamField>
+
+**Returns:** `CheckpointResult`
+
+## Result structure
+
+`CheckpointResult` is returned by `checkpoint.run()`.
+
+<ResponseField name="success" type="bool">
+  `True` if every validation definition in the checkpoint passed. `False` if any validation failed.
+</ResponseField>
+
+<ResponseField name="run_id" type="RunIdentifier">
+  The identifier for this checkpoint run, containing a timestamp.
+</ResponseField>
+
+<ResponseField name="run_results" type="dict">
+  A dictionary mapping `ValidationResultIdentifier` keys to `ExpectationSuiteValidationResult` values — one entry per validation definition.
+</ResponseField>
+
+<ResponseField name="checkpoint_config" type="Checkpoint">
+  The `Checkpoint` object that produced this result.
+</ResponseField>
+
+You can also call `result.describe()` to get a JSON-formatted summary:
+
+```python
+print(result.describe())
+```
+
+```json
+{
+    "success": true,
+    "statistics": {
+        "evaluated_validations": 2,
+        "success_percent": 100.0,
+        "successful_validations": 2,
+        "unsuccessful_validations": 0
+    },
+    "validation_results": [...]
+}
+```
+
+## Actions
+
+Actions run after all validations complete. They receive the full `CheckpointResult`. The most common built-in action is `UpdateDataDocsAction`, which rebuilds the Data Docs site with the latest results.
+
+<Info>
+  `UpdateDataDocsAction` is always executed before other actions to ensure that Data Docs are up to date when notification actions (like Slack) reference them.
+</Info>
+
+```python
+from great_expectations.checkpoint.actions import UpdateDataDocsAction
+
+update_docs_action = UpdateDataDocsAction(name="update_data_docs")
+
+checkpoint = gx.Checkpoint(
+    name="nightly_checkpoint",
+    validation_definitions=[validation_def],
+    actions=[update_docs_action],
+)
+```
+
+## CRUD via context
+
+```python
+# Add to context store (required before running)
+checkpoint = context.checkpoints.add(checkpoint)
+
+# Retrieve by name
+checkpoint = context.checkpoints.get("my_checkpoint")
+
+# List all checkpoints
+all_checkpoints = list(context.checkpoints.all())
+
+# Add or update
+checkpoint = context.checkpoints.add_or_update(checkpoint)
+
+# Delete by name
+context.checkpoints.delete("my_checkpoint")
+```
+
+## Full example
+
+```python
+import pandas as pd
+import great_expectations as gx
+from great_expectations.checkpoint.actions import UpdateDataDocsAction
+from great_expectations.expectations import (
+    ExpectColumnValuesToNotBeNull,
+    ExpectTableRowCountToBeBetween,
+)
+
+context = gx.get_context(mode="file")
+
+# Data source and batch definition
+data_source = context.data_sources.add_pandas(name="taxi_source")
+data_asset = data_source.add_dataframe_asset(name="taxi_data")
+batch_definition = data_asset.add_batch_definition_whole_dataframe("full_batch")
+
+# Expectation suite
+suite = gx.ExpectationSuite(name="taxi_suite")
+suite = context.suites.add(suite)
+suite.add_expectation(ExpectColumnValuesToNotBeNull(column="passenger_count"))
+suite.add_expectation(ExpectTableRowCountToBeBetween(min_value=1))
+
+# Validation definition
+validation_def = gx.ValidationDefinition(
+    name="taxi_validation",
+    data=batch_definition,
+    suite=suite,
+)
+validation_def = context.validation_definitions.add(validation_def)
+
+# Checkpoint with Data Docs action
+checkpoint = gx.Checkpoint(
+    name="nightly_taxi_checkpoint",
+    validation_definitions=[validation_def],
+    actions=[UpdateDataDocsAction(name="update_data_docs")],
+    result_format=gx.ResultFormat.SUMMARY,
+)
+checkpoint = context.checkpoints.add(checkpoint)
+
+# Run the checkpoint
+df = pd.read_csv("taxi_data.csv")
+result = checkpoint.run(batch_parameters={"dataframe": df})
+
+print(f"Checkpoint passed: {result.success}")
+print(result.describe())
+```
+
+## Raises
+
+- `CheckpointRunWithoutValidationDefinitionError`: Raised when `run()` is called with an empty `validation_definitions` list.
+- `CheckpointNotAddedError`: Raised when the checkpoint has not been persisted to the context store before running.
+- `CheckpointNotFreshError`: Raised when the checkpoint has been modified since it was last saved to the store.

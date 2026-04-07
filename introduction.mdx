@@ -1,0 +1,60 @@
+---
+title: "Introduction to GX Core"
+description: "GX Core is a Python library for describing data quality with expressive tests and validating that data meets those standards."
+---
+
+**Great Expectations (GX) Core** is a Python library that gives data teams a programmatic interface for building and running data validation workflows. It combines expressive, declarative data quality tests — called Expectations — with automated validation, human-readable reporting, and flexible integration into production data pipelines.
+
+GX Core works equally well for interactive, exploratory data validation during development and for automated, scheduled data quality testing in production.
+
+## What GX Core does
+
+GX Core lets you:
+
+- **Define Expectations** — Declarative assertions that describe what your data should look like, expressed in plain language backed by Python classes (e.g., `ExpectColumnValuesToNotBeNull`, `ExpectColumnValuesToBeBetween`).
+- **Validate data automatically** — Run Expectations against Batches of data from DataFrames, files, or databases and get structured Validation Results.
+- **Organize validation workflows** — Use Expectation Suites and Validation Definitions to group and manage Expectations across datasets.
+- **Automate in production** — Use Checkpoints to run multiple Validation Definitions together, trigger Actions (email, Slack, custom webhooks) based on results, and keep your pipeline informed.
+- **Generate Data Docs** — Automatically produce human-readable documentation from your Expectation Suites and Validation Results, giving every stakeholder a shared view of data quality.
+
+## Key use cases
+
+<AccordionGroup>
+  <Accordion title="Pipeline data quality gates">
+    Run a Checkpoint at each stage of your data pipeline to catch data quality issues before they propagate downstream. Checkpoints can trigger Actions that send alerts or block pipeline progression when data fails validation.
+  </Accordion>
+  <Accordion title="Exploratory data profiling">
+    Use an ephemeral Data Context and a Pandas DataFrame to interactively validate data during exploration. Write Expectations against sample data to discover what constraints your production pipeline should enforce.
+  </Accordion>
+  <Accordion title="Cross-table consistency testing">
+    Define Expectation Suites that apply to multiple Data Assets — for example, verifying the same column constraints across sharded tables — and run them together using a single Checkpoint.
+  </Accordion>
+  <Accordion title="Regulatory and audit documentation">
+    Use Data Docs to produce a persistent, shareable record of data quality results for compliance reporting and stakeholder review.
+  </Accordion>
+</AccordionGroup>
+
+## How GX Core fits into a data pipeline
+
+All GX Core workflows follow a four-step pattern:
+
+1. **Set up** — Create a Data Context, the central object that manages your GX configuration, metadata, and validation results.
+2. **Connect** — Define a Data Source, a Data Asset, and a Batch Definition to tell GX where your data lives and how to retrieve it.
+3. **Define** — Write Expectations and group them into Expectation Suites that describe what valid data looks like.
+4. **Validate** — Run Validations via a Validation Definition or Checkpoint, collect Validation Results, trigger Actions, and update Data Docs.
+
+GX integrates with orchestrators such as Airflow, Prefect, and Dagster. You can call `checkpoint.run()` from any Python environment — a notebook, a script, or a task in a workflow DAG.
+
+## Where to go next
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Go from `pip install` to your first validated dataset in minutes.
+  </Card>
+  <Card title="Core concepts" icon="book-open" href="/core-concepts">
+    Understand the GX components — Data Context, Expectations, Checkpoints, and more.
+  </Card>
+  <Card title="Connect to data" icon="database" href="/connect/overview">
+    Learn how to connect GX to Pandas DataFrames, files, SQL databases, and cloud storage.
+  </Card>
+</CardGroup>

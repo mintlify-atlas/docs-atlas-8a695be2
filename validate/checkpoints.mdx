@@ -1,0 +1,192 @@
+---
+title: "Checkpoints"
+description: "Run multiple Validation Definitions together and trigger automated actions in production."
+keywords: ["checkpoint", "validation", "actions", "production", "great expectations"]
+---
+
+A Checkpoint is the primary mechanism for validating data in a production deployment of GX Core. It wraps one or more Validation Definitions and executes a list of Actions after validation completes — sending notifications, updating Data Docs, or running custom logic based on the results.
+
+<Note>
+  Actions in a Checkpoint run once per validation cycle (not once per Validation Definition). `UpdateDataDocsAction` always runs before other actions because notification actions may reference Data Docs URLs.
+</Note>
+
+## Create a Checkpoint
+
+<Steps>
+  <Step title="Retrieve your Validation Definitions">
+    Fetch the Validation Definitions that the Checkpoint will run:
+
+    ```python
+    validation_definition = context.validation_definitions.get(
+        name="my_validation_definition"
+    )
+    ```
+
+    You can pass multiple Validation Definitions to group related validations:
+
+    ```python
+    orders_validation = context.validation_definitions.get(name="orders_checks")
+    revenue_validation = context.validation_definitions.get(name="revenue_checks")
+    ```
+  </Step>
+
+  <Step title="Define your Actions">
+    Create a list of Actions to execute after validation. Actions are available from the `great_expectations.checkpoint` module. See [Actions](/validate/actions) for a full list of built-in options.
+
+    ```python
+    import great_expectations as gx
+    from great_expectations.checkpoint.actions import (
+        SlackNotificationAction,
+        UpdateDataDocsAction,
+    )
+
+    actions = [
+        UpdateDataDocsAction(
+            name="update_data_docs",
+        ),
+        SlackNotificationAction(
+            name="notify_on_failure",
+            slack_webhook="${SLACK_WEBHOOK_URL}",
+            notify_on="failure",
+        ),
+    ]
+    ```
+
+    <Tip>
+      Use string substitution (`${ENV_VAR_NAME}`) for credentials and webhook URLs. GX Core reads these from environment variables or from your `config_variables.yml` file.
+    </Tip>
+  </Step>
+
+  <Step title="Create the Checkpoint">
+    Instantiate a `Checkpoint` with a unique name, your Validation Definitions, and your Actions:
+
+    ```python
+    checkpoint = gx.Checkpoint(
+        name="my_checkpoint",
+        validation_definitions=[validation_definition],
+        actions=actions,
+    )
+    ```
+
+    You can also set a default `result_format` for all validations in the Checkpoint:
+
+    ```python
+    from great_expectations.core.result_format import ResultFormat
+
+    checkpoint = gx.Checkpoint(
+        name="my_checkpoint",
+        validation_definitions=[validation_definition],
+        actions=actions,
+        result_format=ResultFormat.COMPLETE,
+    )
+    ```
+  </Step>
+
+  <Step title="Save the Checkpoint">
+    Add the Checkpoint to your Data Context to persist it and make it retrievable in future sessions:
+
+    ```python
+    checkpoint = context.checkpoints.add(checkpoint)
+    ```
+
+    To retrieve it later:
+
+    ```python
+    checkpoint = context.checkpoints.get(name="my_checkpoint")
+    ```
+  </Step>
+</Steps>
+
+## Run a Checkpoint
+
+Call the Checkpoint's `run()` method to execute all Validation Definitions and trigger Actions:
+
+```python
+checkpoint_result = checkpoint.run()
+```
+
+### Run with batch parameters
+
+Pass a `batch_parameters` dictionary to select a specific Batch from each Validation Definition. All Validation Definitions in a Checkpoint receive the same `batch_parameters`, so they should share compatible Batch Definition partitioning:
+
+```python
+checkpoint_result = checkpoint.run(
+    batch_parameters={"year": "2024", "month": "03"}
+)
+```
+
+### Run with Expectation parameters
+
+If your Expectations are configured to accept runtime parameters (the `$PARAMETER` syntax), pass those values with `expectation_parameters`:
+
+```python
+checkpoint_result = checkpoint.run(
+    expectation_parameters={"max_price": 500.00}
+)
+```
+
+## Inspect a CheckpointResult
+
+The `run()` method returns a `CheckpointResult` object.
+
+### Overall success
+
+```python
+print(checkpoint_result.success)
+# True if all Validation Definitions passed, False otherwise
+```
+
+### Summary description
+
+```python
+print(checkpoint_result.describe())
+```
+
+This outputs a JSON string like:
+
+```json
+{
+    "success": false,
+    "statistics": {
+        "evaluated_validations": 2,
+        "success_percent": 50.0,
+        "successful_validations": 1,
+        "unsuccessful_validations": 1
+    },
+    "validation_results": [...]
+}
+```
+
+### Iterating over run results
+
+`checkpoint_result.run_results` is a dictionary mapping `ValidationResultIdentifier` keys to `ExpectationSuiteValidationResult` values:
+
+```python
+for identifier, suite_result in checkpoint_result.run_results.items():
+    print(f"Suite: {suite_result.suite_name}")
+    print(f"Success: {suite_result.success}")
+    for evr in suite_result.results:
+        if not evr.success:
+            print(f"  FAILED: {evr.expectation_config.type}")
+```
+
+## Checkpoint fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | `str` | required | Unique name for the Checkpoint. |
+| `validation_definitions` | `list[ValidationDefinition]` | required | Validation Definitions to run. |
+| `actions` | `list[ValidationAction]` | `[]` | Actions to execute after validation. |
+| `result_format` | `ResultFormat \| str` | `"SUMMARY"` | Verbosity of validation results. |
+| `id` | `str \| None` | `None` | Assigned automatically when saved. |
+
+## What comes next
+
+<CardGroup cols={2}>
+  <Card title="Actions" icon="bolt" href="/validate/actions">
+    Explore built-in Actions and learn how to write custom ones.
+  </Card>
+  <Card title="Data Docs" icon="file-text" href="/validate/data-docs">
+    Automatically generate human-readable validation reports.
+  </Card>
+</CardGroup>

@@ -1,0 +1,158 @@
+---
+title: "Data Docs"
+description: "Auto-generate human-readable validation reports from your Expectations and Validation Results."
+keywords: ["data docs", "validation reports", "html", "great expectations", "build data docs"]
+---
+
+Data Docs are automatically generated HTML documentation that turns your Expectations and Validation Results into human-readable reports. They provide a browsable site where anyone — data engineers, analysts, or stakeholders — can inspect the quality rules applied to your data and see whether recent validations passed or failed.
+
+GX Core generates Data Docs from two sources:
+
+- **Expectation Suites**: documents describing what your data _should_ look like.
+- **Validation Results**: records of whether each Expectation was met for a specific Batch of data.
+
+## Open Data Docs
+
+Open the Data Docs site in your default browser:
+
+```python
+context.open_data_docs()
+```
+
+If you have multiple sites configured, pass a site name to open a specific one:
+
+```python
+context.open_data_docs(site_name="local_site")
+```
+
+## Build Data Docs
+
+Rebuild all Data Docs sites from the stored Expectations and Validation Results:
+
+```python
+context.build_data_docs()
+```
+
+Build only specific sites by name:
+
+```python
+context.build_data_docs(site_names=["local_site"])
+```
+
+<Note>
+  `build_data_docs()` regenerates the full site from all stored Validation Results. For incremental updates after a Checkpoint run, use `UpdateDataDocsAction` instead — it only processes the new results from the current run.
+</Note>
+
+## Automatic updates with UpdateDataDocsAction
+
+In production workflows, attach an `UpdateDataDocsAction` to your Checkpoint. It rebuilds Data Docs automatically after every Checkpoint run so reports are always up to date — without needing to call `build_data_docs()` manually.
+
+```python
+import great_expectations as gx
+from great_expectations.checkpoint.actions import UpdateDataDocsAction
+
+checkpoint = gx.Checkpoint(
+    name="my_checkpoint",
+    validation_definitions=[validation_definition],
+    actions=[
+        UpdateDataDocsAction(name="update_data_docs"),
+    ],
+)
+
+checkpoint_result = checkpoint.run()
+```
+
+`UpdateDataDocsAction` always runs before other actions in the list. This ordering is enforced internally by the Checkpoint — it ensures that any notification actions added after it can include valid Data Docs URLs in their messages.
+
+## Data Docs site structure
+
+A generated Data Docs site contains three main sections:
+
+<AccordionGroup>
+  <Accordion title="Index page">
+    The home page of the site, listing all Expectation Suites and a summary of recent Validation Results. From here you can navigate to any suite or result.
+  </Accordion>
+  <Accordion title="Expectation Suite pages">
+    One page per Expectation Suite, showing each Expectation as a human-readable sentence along with its configuration. For example: _"column `order_id` values must not be null"_.
+  </Accordion>
+  <Accordion title="Validation Result pages">
+    One page per Validation Result, showing whether each Expectation passed or failed for a specific Batch, along with observed values and metrics that explain the outcome.
+  </Accordion>
+</AccordionGroup>
+
+## Storage backends
+
+By default, Data Docs are built to your local filesystem. GX Core supports configuring alternative backends so that reports are accessible to your team.
+
+<Tabs>
+  <Tab title="Local filesystem (default)">
+    Data Docs are written to a `great_expectations/uncommitted/data_docs/` directory relative to your project root. No additional configuration is required.
+
+    ```python
+    # Open locally generated Data Docs
+    context.open_data_docs()
+    ```
+  </Tab>
+  <Tab title="Amazon S3">
+    Configure an S3-backed Data Docs site in your `great_expectations.yml` to publish reports to an S3 bucket — making them accessible via a static website endpoint or CloudFront.
+
+    ```yaml
+    data_docs_sites:
+      s3_site:
+        class_name: SiteBuilder
+        store_backend:
+          class_name: TupleS3StoreBackend
+          bucket: my-data-docs-bucket
+          prefix: data_docs/
+        site_index_builder:
+          class_name: DefaultSiteIndexBuilder
+    ```
+  </Tab>
+  <Tab title="Google Cloud Storage">
+    Publish Data Docs to a GCS bucket for team-wide access:
+
+    ```yaml
+    data_docs_sites:
+      gcs_site:
+        class_name: SiteBuilder
+        store_backend:
+          class_name: TupleGCSStoreBackend
+          project: my-gcp-project
+          bucket: my-data-docs-bucket
+          prefix: data_docs/
+        site_index_builder:
+          class_name: DefaultSiteIndexBuilder
+    ```
+  </Tab>
+  <Tab title="Azure Blob Storage">
+    Store Data Docs in Azure Blob Storage for integration with Azure-based workflows:
+
+    ```yaml
+    data_docs_sites:
+      azure_site:
+        class_name: SiteBuilder
+        store_backend:
+          class_name: TupleAzureBlobStoreBackend
+          container: data-docs
+          prefix: data_docs/
+          connection_string: ${AZURE_STORAGE_CONNECTION_STRING}
+        site_index_builder:
+          class_name: DefaultSiteIndexBuilder
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  You can configure multiple sites simultaneously — for example, a local site for development and an S3 site for production. `UpdateDataDocsAction` and `build_data_docs()` both accept a `site_names` list so you can target specific sites.
+</Tip>
+
+## What comes next
+
+<CardGroup cols={2}>
+  <Card title="Actions" icon="bolt" href="/validate/actions">
+    Use UpdateDataDocsAction and other built-in Actions in your Checkpoints.
+  </Card>
+  <Card title="Checkpoints" icon="list-checks" href="/validate/checkpoints">
+    Configure Checkpoints to run validations and update Data Docs automatically.
+  </Card>
+</CardGroup>

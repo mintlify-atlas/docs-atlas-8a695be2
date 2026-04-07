@@ -1,0 +1,179 @@
+---
+title: "Create a Data Context"
+description: "The Data Context is the entry point for all GX Core workflows. Learn which type to use and how to create one."
+keywords: ["great expectations", "data context", "ephemeral", "file", "cloud", "gx.get_context"]
+---
+
+A Data Context defines where GX Core stores metadata: your Data Source configurations, Expectation Suites, Checkpoints, Validation Results, and associated metrics. It also provides a Python interface to all of those objects.
+
+Every GX Core script begins by obtaining a Data Context.
+
+## Data Context types
+
+GX Core provides three Data Context types. Choose the one that fits your use case.
+
+<CardGroup cols={3}>
+  <Card title="Ephemeral" icon="zap">
+    In-memory only. No files are written. Ideal for exploratory work, notebooks, and pipelines where you do not need to persist configuration.
+  </Card>
+  <Card title="File-based" icon="folder">
+    Persists configuration and metadata as YAML files on the local filesystem. Allows you to reuse previously configured Data Sources, Expectation Suites, and Checkpoints across sessions.
+  </Card>
+  <Card title="Cloud" icon="cloud">
+    Configuration is stored in GX Cloud. Enables team collaboration, centralized governance, and shared Expectation Suites. Requires a GX Cloud account.
+  </Card>
+</CardGroup>
+
+## The `get_context()` factory
+
+All three context types are created through the `gx.get_context()` factory function. The `mode` parameter controls which type is returned.
+
+```python
+import great_expectations as gx
+
+context = gx.get_context(mode="ephemeral" | "file" | "cloud")
+```
+
+When `mode` is omitted, GX applies the following auto-detection logic:
+
+1. If GX Cloud environment variables are configured, a `CloudDataContext` is returned.
+2. If a `great_expectations.yml` file is found in the current directory or any parent directory, a `FileDataContext` is returned.
+3. Otherwise, an `EphemeralDataContext` is returned.
+
+## Create a Data Context
+
+<Tabs>
+  <Tab title="Ephemeral">
+    An Ephemeral Data Context lives entirely in memory. It is not persisted to disk and does not require any configuration files. Each call to `get_context(mode="ephemeral")` always returns a new, empty context.
+
+    **Best for:** Notebooks, one-off scripts, CI pipelines, and environments without filesystem write access.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="ephemeral")
+    ```
+
+    To inspect the context configuration:
+
+    ```python
+    print(context)
+    ```
+
+    <Note>
+    Because an Ephemeral Data Context is not persisted, any Data Sources, Expectation Suites, or Checkpoints you configure are lost when the Python session ends.
+    </Note>
+  </Tab>
+
+  <Tab title="File-based">
+    A File Data Context stores all configuration and metadata as YAML files under a `great_expectations/` directory in your project. This lets you reuse configurations across sessions.
+
+    **Best for:** Local development, projects tracked in version control, and workflows where you want to share configuration files with teammates.
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="file")
+    ```
+
+    When you call `get_context(mode="file")`, GX searches for an existing `great_expectations.yml` file starting in the current working directory and traversing upward through parent directories. If no existing configuration is found, a new File Data Context is initialized in the current working directory.
+
+    To use a specific directory, pass `project_root_dir`:
+
+    ```python
+    import great_expectations as gx
+
+    context = gx.get_context(mode="file", project_root_dir="./my_gx_project")
+    ```
+
+    If the directory does not contain an existing GX project, one is scaffolded there automatically.
+
+    To inspect the context configuration:
+
+    ```python
+    print(context)
+    ```
+
+    <Tip>
+    The `great_expectations/uncommitted/` directory is included in the default `.gitignore`. Store sensitive credentials there (for example, in `config_variables.yml`) so they are not committed to version control. See [Configure Credentials](/setup/configure-credentials) for details.
+    </Tip>
+  </Tab>
+
+  <Tab title="Cloud">
+    A Cloud Data Context connects to GX Cloud, where configuration is stored centrally. This enables teams to share Expectation Suites, view Validation Results, and collaborate on data quality workflows.
+
+    **Best for:** Teams, production deployments, and scenarios requiring centralized governance.
+
+    <Steps>
+      <Step title="Set environment variables">
+        GX Cloud requires two environment variables. Set them in your shell or CI environment:
+
+        ```bash
+        export GX_CLOUD_ACCESS_TOKEN="your_access_token"
+        export GX_CLOUD_ORGANIZATION_ID="your_organization_id"
+        ```
+
+        You can retrieve these values from your GX Cloud account settings.
+      </Step>
+
+      <Step title="Create the context">
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context(mode="cloud")
+        ```
+
+        GX reads `GX_CLOUD_ACCESS_TOKEN` and `GX_CLOUD_ORGANIZATION_ID` from the environment. You can also pass these values directly as parameters:
+
+        ```python
+        import great_expectations as gx
+
+        context = gx.get_context(
+            mode="cloud",
+            cloud_access_token="your_access_token",
+            cloud_organization_id="your_organization_id",
+        )
+        ```
+      </Step>
+
+      <Step title="Verify the connection">
+        ```python
+        print(context)
+        ```
+
+        The Cloud Data Context configuration, including the connected organization, is displayed.
+      </Step>
+    </Steps>
+
+    <Warning>
+    `get_context(mode="cloud")` raises a `GXCloudConfigurationError` if `GX_CLOUD_ORGANIZATION_ID` or `GX_CLOUD_ACCESS_TOKEN` are missing and were not passed as parameters.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Auto-detect mode (no `mode` argument)
+
+If you call `gx.get_context()` without a `mode` argument, GX determines the appropriate context type automatically:
+
+```python
+import great_expectations as gx
+
+context = gx.get_context()
+
+# Check which type was returned
+print(type(context).__name__)
+```
+
+The resolution order is:
+
+1. **Cloud** — returned if `GX_CLOUD_ACCESS_TOKEN` and `GX_CLOUD_ORGANIZATION_ID` are set in the environment.
+2. **File** — returned if a `great_expectations.yml` is found in the current or any ancestor directory.
+3. **Ephemeral** — returned as the default when neither of the above conditions is met.
+
+<Info>
+To force a non-cloud context even when cloud environment variables are configured, pass `cloud_mode=False`:
+
+```python
+context = gx.get_context(cloud_mode=False)
+```
+</Info>
